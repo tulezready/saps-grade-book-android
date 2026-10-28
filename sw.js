@@ -1,6 +1,7 @@
 // SAPS Grade Book service worker — bump VERSION on every update so phones fetch the new files.
-const VERSION = 'gradebook-v4';
+const VERSION = 'gradebook-v5';
 const FILES = ['./', 'index.html', 'xlsx.full.min.js', 'nacl.min.js', 'manifest.webmanifest',
+  'fonts/lexend-latin-wght.woff2', 'fonts/source-sans-3-latin-wght.woff2',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-192.png', 'icons/maskable-512.png'];
 
 self.addEventListener('install', e => {
