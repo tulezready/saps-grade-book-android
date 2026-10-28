@@ -1,0 +1,5 @@
+# Never commit the licence signing key or the issued-codes log
+*.pem
+gb-private*
+licences.csv
+gb-keygen.js

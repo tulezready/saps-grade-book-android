@@ -156,6 +156,11 @@ table.t th .tt{font-size:10px;font-weight:400;color:var(--muted);display:block}
   table.tasks td:nth-child(5)::before{content:"Out of";display:block;font-size:10px;color:var(--muted)}
 }
 .backupBar{display:none;margin-bottom:10px}
+.trialbar{background:#eef3ff;color:#2b4a8a;margin:0 0 10px}
+.devid{font:700 26px/1.2 ui-monospace,Consolas,monospace;letter-spacing:2px;text-align:center;padding:14px;border:2px dashed var(--pri);border-radius:10px;background:var(--pri-soft);color:var(--pri);margin:6px 0 4px;user-select:all}
+.lic{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:8px 0;font-size:14px}.lic span{color:var(--muted)}
+.trialp{text-align:center;font:700 11pt Arial;border:2px solid #000;padding:3px;margin-bottom:6px;letter-spacing:1px}
+a.btn{text-decoration:none;display:inline-block;text-align:center}
 @media print{
   @page{size:A4 portrait;margin:9mm}
   body{background:#fff}
@@ -179,6 +184,7 @@ table.t th .tt{font-size:10px;font-weight:400;color:var(--muted);display:block}
 .ps .foot{display:flex;justify-content:space-between;margin-top:14px;font-size:9pt}
 </style>
 <script src="xlsx.full.min.js"></script>
+<script src="nacl.min.js"></script>
 </head>
 <body>
 <div class="app">
@@ -251,6 +257,64 @@ function save(){
 function setStatus(t,k){const s=$('#status');s.textContent=t;s.className=k||''}
 function fixSubject(){const c=cls();if(!c){ui.subjectId=null;return}if(!c.subjects.find(s=>s.id===ui.subjectId))ui.subjectId=c.subjects[0]?c.subjects[0].id:null}
 
+/* ---------- licence (one device) ---------- */
+// Public key of Ready Digital Consultancy's signing key. Leave '' to switch licensing off.
+const LICENSE_PUBKEY='';
+const LIC_KEY='sapsgb_licence',DEV_KEY='sapsgb_device';
+const TRIAL={classes:1,subjects:2};
+const RDC_WHATSAPP='67570254566';
+let LIC={on:!!LICENSE_PUBKEY,ok:false,name:'',device:''};
+function b64u(str){str=str.replace(/-/g,'+').replace(/_/g,'/');while(str.length%4)str+='=';const b=atob(str),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u}
+function deviceId(){
+  let d='';try{d=localStorage.getItem(DEV_KEY)||''}catch(e){}
+  if(!/^GB-[0-9A-Z]{4}-[0-9A-Z]{4}$/.test(d)){
+    const A='0123456789ABCDEFGHJKMNPQRSTVWXYZ',r=crypto.getRandomValues(new Uint8Array(8));
+    const x=[...r].map(v=>A[v%32]).join('');d=`GB-${x.slice(0,4)}-${x.slice(4)}`;
+    try{localStorage.setItem(DEV_KEY,d)}catch(e){}
+  }
+  return d;
+}
+// Code = GB1.<name>.<signature>; the signature covers "SAPSGB1|<device id>|<name>".
+function checkCode(code,dev){
+  code=String(code||'').replace(/\s+/g,'');
+  const m=code.match(/^GB1\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]{86})$/);if(!m)return {ok:false,why:'format'};
+  try{const name=new TextDecoder().decode(b64u(m[1]));const sig=b64u(m[2]);
+    const msg=new TextEncoder().encode(`SAPSGB1|${dev}|${name}`);
+    return nacl.sign.detached.verify(msg,sig,b64u(LICENSE_PUBKEY))?{ok:true,name,code}:{ok:false,why:'device'};
+  }catch(e){return {ok:false,why:'format'}}
+}
+function loadLicence(){
+  LIC.device=deviceId();if(!LIC.on){LIC.ok=true;return}
+  let code='';try{code=localStorage.getItem(LIC_KEY)||''}catch(e){}
+  const r=code?checkCode(code,LIC.device):{ok:false};LIC.ok=r.ok;LIC.name=r.ok?r.name:'';
+}
+const trial=()=>LIC.on&&!LIC.ok;
+function needLicence(what){if(!trial())return false;if(confirm(`${what} is only available in the full version.\n\nActivate SAPS Grade Book on this phone now?`))go('activate');return true}
+function vActivate(){
+  const dev=LIC.device;
+  const msg=`Hi Ready Digital Consultancy, I would like to activate SAPS Grade Book.\nDevice ID: ${dev}\nTeacher name: \nSchool: `;
+  if(LIC.ok)return `<h2>Activation</h2><div class="card"><div class="note ok" style="margin-top:0">✔ Activated on this phone.</div>
+    <div class="lic"><span>Licensed to</span><b>${esc(LIC.name)}</b><span>Device ID</span><b>${esc(dev)}</b></div>
+    <div class="muted small">This licence works on this phone only. If you change phones or clear the app's data, send your new Device ID to Ready Digital Consultancy for a new code. Keep a backup of your marks so you can restore them after re-activating.</div></div>`;
+  return `<h2>Activate SAPS Grade Book</h2><div class="muted">The trial lets you set up ${TRIAL.classes} class with up to ${TRIAL.subjects} subjects. The full version adds unlimited classes and subjects, Excel export and import, and clean printouts.</div>
+  <div class="card" style="margin-top:14px"><h3>Step 1 — Send your Device ID</h3>
+    <div class="devid" id="devid">${esc(dev)}</div>
+    <div class="toolbar"><a class="btn pri" href="https://wa.me/${RDC_WHATSAPP}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Send on WhatsApp</a><button class="btn" onclick="copyText('${dev}')">Copy Device ID</button></div>
+    <div class="muted small">Or call / text Ready Digital Consultancy on 70254566 · tulezready@gmail.com. Each code works on one phone only.</div></div>
+  <div class="card"><h3>Step 2 — Paste your activation code</h3>
+    <label class="f">Activation code<textarea id="actcode" rows="3" placeholder="GB1.…" autocapitalize="off" autocorrect="off" spellcheck="false" style="font-family:monospace;font-size:13px"></textarea></label>
+    <div id="actmsg"></div>
+    <div class="toolbar"><button class="btn" onclick="pasteCode()">Paste</button><button class="btn pri" onclick="activate()">Activate</button></div></div>`;
+}
+async function copyText(t){try{await navigator.clipboard.writeText(t);setStatus('Copied')}catch(e){prompt('Copy this:',t)}}
+async function pasteCode(){try{$('#actcode').value=await navigator.clipboard.readText()}catch(e){$('#actcode').focus()}}
+function activate(){
+  const code=$('#actcode').value,r=checkCode(code,LIC.device),m=$('#actmsg');
+  if(!r.ok){m.innerHTML=`<div class="note bad">${r.why==='format'?'That does not look like a full activation code. Copy the whole code from the message, starting with GB1.':'This code is not for this phone. Check that you sent Device ID <b>'+esc(LIC.device)+'</b>.'}</div>`;return}
+  try{localStorage.setItem(LIC_KEY,r.code)}catch(e){m.innerHTML='<div class="note bad">Could not save the code on this phone. Free up storage and try again.</div>';return}
+  LIC.ok=true;LIC.name=r.name;render();alert(`Activated. Licensed to ${r.name}.`);
+}
+
 /* ---------- calculations ---------- */
 const APS=[1,2];
 function apOf(t){return Number(t.ap)===2?2:1}
@@ -309,10 +373,11 @@ function renderTop(){
 }
 function render(){
   renderTop();
-  const v={classes:vClasses,students:vStudents,subjects:vSubjects,marks:vMarks,results:vResults,summary:vSummary,settings:vSettings}[ui.tab]||vClasses;
+  const v={classes:vClasses,students:vStudents,subjects:vSubjects,marks:vMarks,results:vResults,summary:vSummary,settings:vSettings,activate:vActivate}[ui.tab]||vClasses;
   const days=S.lastBackup?Math.floor((Date.now()-new Date(S.lastBackup).getTime())/864e5):null;
   const bb=S.classes.length&&ui.tab!=='settings'&&(days==null||days>=7)?`<div class="note warn backupBar">${days==null?'No backup made yet.':'Last backup '+days+' days ago.'} If this phone is lost or the app is cleared, marks are lost. <a href="#" onclick="backup();return false">Back up now</a></div>`:'';
-  $('#main').innerHTML=bb+v();
+  const tb=trial()&&ui.tab!=='activate'?`<div class="note trialbar">Trial version · ${TRIAL.classes} class, ${TRIAL.subjects} subjects, no Excel. <a href="#" onclick="go('activate');return false">Activate full version</a></div>`:'';
+  $('#main').innerHTML=tb+bb+v();
   if(ui.tab==='marks')bindGrid();
 }
 function needClass(){return `<div class="empty">Create or open a class first.<br><br><button class="btn pri" onclick="go('classes')">Go to Classes</button></div>`}
@@ -338,6 +403,7 @@ function vClasses(){
   </div></div>`;
 }
 function saveClass(){
+  if(!ui.editClass&&S.classes.length>=TRIAL.classes&&needLicence('More than one class'))return;
   const d={grade:Number($('#f_grade').value),section:$('#f_section').value.trim().toUpperCase(),year:$('#f_year').value.trim(),term:$('#f_term').value,teacher:$('#f_teacher').value.trim()};
   if(!d.section){alert('Enter the class letter (e.g. D).');return}
   if(ui.editClass){
@@ -351,6 +417,7 @@ function editClass(id){ui.editClass=id;render()}
 function openClass(id){ui.classId=id;fixSubject();const c=cls();ui.tab=!c.students.length?'students':!c.subjects.length?'subjects':'marks';save();render()}
 function delClass(id){const c=S.classes.find(x=>x.id===id);if(!confirm(`Delete Grade ${className(c)} and ALL its marks? This cannot be undone.`))return;S.classes=S.classes.filter(x=>x.id!==id);if(ui.classId===id)ui.classId=S.classes[0]?S.classes[0].id:null;fixSubject();save();render()}
 function copyClass(id){
+  if(needLicence('More than one class'))return;
   const c=S.classes.find(x=>x.id===id);
   const n={id:uid(),grade:c.grade,section:c.section,year:c.year,term:Math.min(4,Number(c.term)+1),teacher:c.teacher,
     students:c.students.map(s=>({...s})),subjects:c.subjects.map(s=>({id:uid(),name:s.name,teacher:s.teacher,tasks:s.tasks.map(t=>({...t,id:uid(),date:''})),scores:{}}))};
@@ -436,7 +503,7 @@ function vSubjects(){
   ${missing.length?`<div class="muted small" style="margin-top:10px">Quick add:</div><div class="chips">${missing.map(q=>`<button class="chip add" onclick="addSubj(${esc(JSON.stringify(q))})">+ ${esc(q)}</button>`).join('')}</div>`:''}</div>
   ${tasks}`;
 }
-function addSubj(name){name=String(name||'').trim();if(!name)return;const c=cls();if(c.subjects.some(x=>x.name.toLowerCase()===name.toLowerCase())){alert('That subject is already added.');return}
+function addSubj(name){name=String(name||'').trim();if(!name)return;const c=cls();if(c.subjects.length>=TRIAL.subjects&&needLicence(`More than ${TRIAL.subjects} subjects`))return;if(c.subjects.some(x=>x.name.toLowerCase()===name.toLowerCase())){alert('That subject is already added.');return}
   const s={id:uid(),name,teacher:'',tasks:[],scores:{}};c.subjects.push(s);ui.subjectId=s.id;ui.tab='subjects';save();render()}
 function renameSubj(){const s=subj();const n=prompt('Subject name',s.name);if(n&&n.trim()){s.name=n.trim();save();render()}}
 function delSubj(){const c=cls(),s=subj();if(!confirm(`Delete ${s.name} and all its marks (AP1 and AP2)?`))return;c.subjects=c.subjects.filter(x=>x.id!==s.id);fixSubject();save();render()}
@@ -591,7 +658,8 @@ function vSettings(){
   <div class="card"><h3>Backup &amp; restore</h3><div class="muted small">Marks are kept on this device only — clearing the app's data or losing the phone loses them. Save a backup every week (to Google Drive, WhatsApp, email or a flash drive) and before handing in SAPS files.</div>
     <div class="toolbar"><button class="btn pri" onclick="backup()">Save backup file</button><button class="btn" onclick="restore()">Restore from backup</button></div>
     <div class="muted small">${S.lastBackup?'Last backup: '+new Date(S.lastBackup).toLocaleString():'No backup made yet.'}</div></div>
-  <div class="card"><h3>About</h3><div class="muted small">SAPS Grade Book v1.1 · works offline · Lower Primary (Gr 3–5): AP /100, total /200 · Upper Primary (Gr 6–8): AP /200, total /400.<br>Excel files: use <b>Export</b> to share marks to Excel and <b>Import</b> to bring edited marks back. Printing on a phone opens Android's print screen, where you can choose <b>Save as PDF</b>.<br><br>Developed by Ready Digital Consultancy, Kokopo, ENB · 70254566 · tulezready@gmail.com</div></div>
+  ${LIC.on?`<div class="card"><h3>Licence</h3>${LIC.ok?`<div class="lic"><span>Licensed to</span><b>${esc(LIC.name)}</b><span>Device ID</span><b>${esc(LIC.device)}</b></div>`:`<div class="muted small">Trial version on this phone (Device ID <b>${esc(LIC.device)}</b>).</div><div class="toolbar"><button class="btn pri" onclick="go('activate')">Activate full version</button></div>`}</div>`:''}
+  <div class="card"><h3>About</h3><div class="muted small">SAPS Grade Book v1.2 · works offline · Lower Primary (Gr 3–5): AP /100, total /200 · Upper Primary (Gr 6–8): AP /200, total /400.<br>Excel files: use <b>Export</b> to share marks to Excel and <b>Import</b> to bring edited marks back. Printing on a phone opens Android's print screen, where you can choose <b>Save as PDF</b>.<br><br>Developed by Ready Digital Consultancy, Kokopo, ENB · 70254566 · tulezready@gmail.com</div></div>
   <div class="card"><h3>Start fresh</h3><div class="muted small">Deletes every class and mark on this device.</div><div class="toolbar"><button class="btn danger" onclick="wipe()">Delete all data</button></div></div></div>`;
 }
 function saveSchool(){S.school={name:$('#sc_name').value.trim(),address:$('#sc_addr').value.trim(),phone:$('#sc_phone').value.trim()};save();render()}
@@ -606,6 +674,7 @@ function backup(){
 }
 function restore(){pickFile('.json',file=>{const r=new FileReader();r.onload=e=>{let d;try{d=JSON.parse(e.target.result)}catch(x){alert('That is not a Grade Book backup file.');return}
   if(!d||!Array.isArray(d.classes)||!d.classes.every(c=>c.id&&Array.isArray(c.students)&&Array.isArray(c.subjects))){alert('That is not a Grade Book backup file.');return}
+  if(trial()&&(d.classes.length>TRIAL.classes||d.classes.some(c=>c.subjects.length>TRIAL.subjects))){if(confirm(`This backup has ${d.classes.length} class(es) and up to ${Math.max(0,...d.classes.map(c=>c.subjects.length))} subjects, which is more than the trial allows.\n\nActivate the full version to restore it?`))go('activate');return}
   if(!confirm(`Restore ${d.classes.length} class(es) from this backup? Everything currently in the app will be replaced.`))return;
   S=d;migrate();if(!S.school)S.school={name:'',address:'',phone:''};if(!S.bands||!S.bands.length)S.bands=JSON.parse(JSON.stringify(DEF_BANDS));ui.classId=S.classes[0]?S.classes[0].id:null;fixSubject();ui.tab='classes';save();render();alert('Backup restored.')};r.readAsText(file)})}
 function wipe(){if(!confirm('Delete ALL classes, students and marks on this device?'))return;if(prompt('Type DELETE to confirm')!=='DELETE')return;S=defState();ui={tab:'classes',classId:null,subjectId:null,editClass:null,ap:1,rview:'total',sumDetail:false};save();render()}
@@ -695,15 +764,16 @@ function summarySheet(c,links){
   ws['!merges']=[0,1,2,3].map(r=>({s:{r,c:0},e:{r,c:cg}}));return ws;
 }
 function fileBase(c){return `Grade${className(c)}-T${c.term}-${c.year}`.replace(/[^\w\-]/g,'')}
-function exportSubject(){const c=cls(),s=subj();const wb=XLSX.utils.book_new(),used=new Set(['ranking']);
+function exportSubject(){if(needLicence('Excel export'))return;const c=cls(),s=subj();const wb=XLSX.utils.book_new(),used=new Set(['ranking']);
   addSubjectSheets(wb,c,s,used);XLSX.utils.book_append_sheet(wb,rankingSheet(c,s),'Ranking');
   saveBook(wb,`${s.name.replace(/[^\w]+/g,'-')}-${fileBase(c)}.xlsx`)}
-function exportSummary(){const c=cls();const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,summarySheet(c,null),'Final Results');saveBook(wb,`Final-Results-${fileBase(c)}.xlsx`)}
-function exportAll(){const c=cls();const wb=XLSX.utils.book_new(),used=new Set(['final results']);
+function exportSummary(){if(needLicence('Excel export'))return;const c=cls();const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,summarySheet(c,null),'Final Results');saveBook(wb,`Final-Results-${fileBase(c)}.xlsx`)}
+function exportAll(){if(needLicence('Excel export'))return;const c=cls();const wb=XLSX.utils.book_new(),used=new Set(['final results']);
   const links=c.subjects.map(s=>addSubjectSheets(wb,c,s,used));
   XLSX.utils.book_append_sheet(wb,summarySheet(c,links),'Final Results');wb.SheetNames.unshift(wb.SheetNames.pop());
   saveBook(wb,`Final-Results-All-Subjects-${fileBase(c)}.xlsx`)}
 function importMarks(){
+  if(needLicence('Excel import'))return;
   const c=cls(),s=subj(),ap=ui.ap,T=tasksOf(s,ap);
   if(!T.length){alert(`Set up the AP${ap} tasks for ${s.name} first.`);return}
   pickFile('.xlsx,.xls,.csv',file=>readBook(file,wb=>{
@@ -741,7 +811,7 @@ function saveBook(wb,name){const out=XLSX.write(wb,{bookType:'xlsx',type:'array'
 
 /* ---------- printing ---------- */
 function printHead(c,extra){return `<div class="hd"><b>${esc(S.school.name||'')}</b><br>${esc(S.school.address||'')}${S.school.phone?'<br>PH#: '+esc(S.school.phone):''}</div>${extra}`}
-function doPrint(html){$('#printArea').innerHTML=html;setTimeout(()=>window.print(),50)}
+function doPrint(html){if(trial())html=html.replace(/<div class="ps( land)?">/g,m=>m+'<div class="trialp">TRIAL VERSION — NOT ACTIVATED · SAPS Grade Book</div>');$('#printArea').innerHTML=html;setTimeout(()=>window.print(),50)}
 function printSAPS(blank){
   const c=cls(),s=subj(),L=level(c.grade),ap=ui.ap,T=tasksOf(s,ap),res=calc(c,s,ap);
   if(!T.length&&!blank){alert(`No AP${ap} tasks set up for ${s.name} yet.`);return}
@@ -781,7 +851,7 @@ function printSummary(){
   <div class="foot"><span>Class teacher: ____________________</span><span>Head Teacher: ____________________</span><span>Date: ____________</span></div></div>`);
 }
 
-load();render();
+loadLicence();load();if(ui.tab==='activate'&&!LIC.on)ui.tab='classes';render();
 if('serviceWorker' in navigator&&(location.protocol==='https:'||location.hostname==='localhost')){navigator.serviceWorker.register('sw.js').catch(()=>{})}
 if(navigator.storage&&navigator.storage.persist){navigator.storage.persist().catch(()=>{})}
 </script>

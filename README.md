@@ -42,3 +42,8 @@ Teachers should use **Settings → Save backup file** weekly (share to Google Dr
 ## Version history
 - v1.1 — AP1 and AP2 inside each class; subject Total (AP1 + AP2); Final Results page (all subjects, grand total, %, grade, placing); Excel export with linked AP, Total and Final Results sheets. Older backups load automatically (their tasks go into the period set on the class).
 - v1.0 — first release.
+
+## Licensing (one device per code)
+- The app creates a Device ID (e.g. `GB-7K3M-Q9TX`) per install. Without a valid code it runs as a trial: 1 class, 2 subjects, no Excel export/import, prints marked TRIAL.
+- Codes are Ed25519 signatures made with RDC's private key using `gb-keygen.js` (kept OFF this repo). The app only holds the public key (`LICENSE_PUBKEY` in index.html), so codes cannot be forged from the app's code.
+- `LICENSE_PUBKEY = ''` switches licensing off.
