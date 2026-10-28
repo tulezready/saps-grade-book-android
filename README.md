@@ -1,7 +1,9 @@
 # SAPS Grade Book — Android (PWA)
 
 Offline marks, totals, positions and grades for PNG primary schools.
-Lower Primary (Grades 3–5) out of 100 · Upper Primary (Grades 6–8) out of 200.
+Lower Primary (Grades 3–5): each assessment period (AP1, AP2) out of 100, subject total out of 200.
+Upper Primary (Grades 6–8): each assessment period out of 200, subject total out of 400.
+Final Results ranks the class on the grand total of all subjects.
 Data stays on the phone; Excel is the link in and out (import class lists and marks, export mark sheets with live formulas).
 
 ## Files
@@ -36,3 +38,7 @@ Change the files, then bump `VERSION` in `sw.js` (e.g. `gradebook-v2`) and push.
 ## Data safety
 Marks live in the app's storage on each phone. Clearing app data or uninstalling deletes them.
 Teachers should use **Settings → Save backup file** weekly (share to Google Drive / WhatsApp / email) and **Restore from backup** on a new phone.
+
+## Version history
+- v1.1 — AP1 and AP2 inside each class; subject Total (AP1 + AP2); Final Results page (all subjects, grand total, %, grade, placing); Excel export with linked AP, Total and Final Results sheets. Older backups load automatically (their tasks go into the period set on the class).
+- v1.0 — first release.

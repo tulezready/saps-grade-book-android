@@ -1,5 +1,5 @@
 // SAPS Grade Book service worker — bump VERSION on every update so phones fetch the new files.
-const VERSION = 'gradebook-v1';
+const VERSION = 'gradebook-v2';
 const FILES = ['./', 'index.html', 'xlsx.full.min.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-192.png', 'icons/maskable-512.png'];
 

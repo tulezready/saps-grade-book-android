@@ -84,7 +84,7 @@ table.marks input.sc{width:58px;border:0;padding:6px;text-align:center;backgroun
 table.marks input.sc:focus{outline:2px solid var(--pri);outline-offset:-2px;background:#fff}
 table.marks input.sc.bad{background:var(--bad-soft);color:var(--bad);font-weight:700}
 table.marks tr:hover td{background:#f7faf8}
-table.marks th .tt{font-size:10px;font-weight:400;color:var(--muted);display:block}
+table.t th .tt{font-size:10px;font-weight:400;color:var(--muted);display:block}
 .g{display:inline-block;min-width:24px;padding:2px 6px;border-radius:5px;color:#fff;font-weight:700;font-size:12px;text-align:center}
 .gA{background:var(--A)}.gB{background:var(--B)}.gC{background:var(--C)}.gD{background:var(--D)}.gE{background:var(--E)}
 .pos1 td{background:#fff9e3}
@@ -119,7 +119,8 @@ table.marks th .tt{font-size:10px;font-weight:400;color:var(--muted);display:blo
 .navico{display:none}
 @media (max-width:820px){
   body{font-size:15px}
-  .app{grid-template-columns:1fr;grid-template-rows:auto 1fr auto;height:100vh;height:100dvh}
+  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;height:100vh;height:100dvh}
+  main,header{min-width:0}
   header{grid-column:1;flex-wrap:wrap;gap:6px 10px;padding:8px 12px calc(8px) 12px;padding-top:max(8px,env(safe-area-inset-top))}
   header .logo{font-size:16px}
   header .sel{margin-left:0;width:100%}
@@ -163,6 +164,9 @@ table.marks th .tt{font-size:10px;font-weight:400;color:var(--muted);display:blo
 }
 .ps{page-break-after:always}
 .ps:last-child{page-break-after:auto}
+@page land{size:A4 landscape;margin:8mm}
+.ps.land{page:land}
+.apchips .chip{padding:7px 12px}
 .ps .hd{text-align:center;font-size:10pt;line-height:1.3;margin-bottom:6px}
 .ps .hd b{font-size:12pt;text-decoration:underline}
 .ps .meta{display:flex;justify-content:space-between;font-size:9.5pt;margin:4px 0 6px}
@@ -192,7 +196,7 @@ table.marks th .tt{font-size:10px;font-weight:400;color:var(--muted);display:blo
     <button data-tab="subjects" onclick="go('subjects')"><span class="n">3</span><span class="navico">📚</span><span class="lg">Subjects &amp; Tasks</span><span class="sh">Subjects</span></button>
     <button data-tab="marks" onclick="go('marks')"><span class="n">4</span><span class="navico">✏️</span><span class="lg">Marks Entry</span><span class="sh">Marks</span></button>
     <button data-tab="results" onclick="go('results')"><span class="n">5</span><span class="navico">🏆</span><span class="lg">Results &amp; Ranking</span><span class="sh">Results</span></button>
-    <button data-tab="summary" onclick="go('summary')"><span class="n">6</span><span class="navico">📊</span><span class="lg">Class Summary</span><span class="sh">Summary</span></button>
+    <button data-tab="summary" onclick="go('summary')"><span class="n">6</span><span class="navico">📊</span><span class="lg">Final Results</span><span class="sh">Final</span></button>
     <button data-tab="settings" onclick="go('settings')"><span class="n">⚙</span><span class="navico">⚙️</span><span class="lg">Settings &amp; Backup</span><span class="sh">Settings</span></button>
     <div class="foot" id="backupNote"></div>
   </nav>
@@ -208,7 +212,7 @@ const DEF_BANDS=[{g:'A',min:85,label:'Excellent'},{g:'B',min:70,label:'Very Good
 const TYPES=['Test','Assignment','Project','Practical','Oral','Exam','Other'];
 const QUICK_SUBJECTS=['English','Mathematics','Science','Social Science','Arts','Health & Physical Education','Making a Living','Personal Development','Citizenship & Christian Values'];
 let S=null;
-let ui={tab:'classes',classId:null,subjectId:null,editClass:null};
+let ui={tab:'classes',classId:null,subjectId:null,editClass:null,ap:1,rview:'total',sumDetail:false};
 
 /* ---------- helpers ---------- */
 const $=q=>document.querySelector(q);
@@ -232,12 +236,15 @@ function load(){
   try{const raw=localStorage.getItem(KEY);if(raw)S=JSON.parse(raw)}catch(e){S=null}
   if(!S||!Array.isArray(S.classes))S=defState();
   if(!Array.isArray(S.bands)||!S.bands.length)S.bands=JSON.parse(JSON.stringify(DEF_BANDS));
-  if(S.ui){ui.tab=S.ui.tab||'classes';ui.classId=S.ui.classId||null;ui.subjectId=S.ui.subjectId||null}
+  migrate();
+  if(S.ui){ui.tab=S.ui.tab||'classes';ui.classId=S.ui.classId||null;ui.subjectId=S.ui.subjectId||null;ui.ap=S.ui.ap===2?2:1}
   if(!cls()){ui.classId=S.classes[0]?S.classes[0].id:null}
   fixSubject();
 }
+// v1 data had one assessment period per class; tag those tasks with the class's period.
+function migrate(){S.classes.forEach(c=>c.subjects.forEach(s=>s.tasks.forEach(t=>{if(t.ap==null)t.ap=parseInt(c.period,10)===2?2:1})));S.v=2}
 function save(){
-  S.ui={tab:ui.tab,classId:ui.classId,subjectId:ui.subjectId};
+  S.ui={tab:ui.tab,classId:ui.classId,subjectId:ui.subjectId,ap:ui.ap};
   try{localStorage.setItem(KEY,JSON.stringify(S));setStatus('Saved '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}))}
   catch(e){setStatus('NOT SAVED – make a backup','err')}
 }
@@ -245,28 +252,44 @@ function setStatus(t,k){const s=$('#status');s.textContent=t;s.className=k||''}
 function fixSubject(){const c=cls();if(!c){ui.subjectId=null;return}if(!c.subjects.find(s=>s.id===ui.subjectId))ui.subjectId=c.subjects[0]?c.subjects[0].id:null}
 
 /* ---------- calculations ---------- */
-function calc(c,s){
-  const L=level(c.grade),res={};
-  c.students.forEach(st=>{
-    const sc=s.scores[st.id]||{};let tot=0,n=0;
-    s.tasks.forEach(t=>{const v=sc[t.id];if(typeof v==='number'){tot+=v;n++}});
-    res[st.id]=n?{tot:r1(tot),n,pct:r1(tot/L.max*100),complete:n===s.tasks.length}:{tot:null,n:0,pct:null,complete:false};
-  });
-  const tots=Object.values(res).filter(r=>r.tot!==null).map(r=>r.tot);
-  for(const id in res){const r=res[id];if(r.tot!==null){r.pos=1+tots.filter(t=>t>r.tot).length;r.grade=gradeOf(r.pct)}}
+const APS=[1,2];
+function apOf(t){return Number(t.ap)===2?2:1}
+function tasksOf(s,ap){return s.tasks.filter(t=>apOf(t)===ap)}
+function rankBy(res,key){const v=Object.values(res).filter(r=>r[key]!=null).map(r=>r[key]);for(const id in res){const r=res[id];if(r[key]!=null)r.pos=1+v.filter(x=>x>r[key]).length}}
+// One assessment period of one subject: out of 100 (Lower) or 200 (Upper).
+function calc(c,s,ap){
+  ap=ap||ui.ap||1;const L=level(c.grade),T=tasksOf(s,ap),res={};
+  c.students.forEach(st=>{const sc=s.scores[st.id]||{};let tot=0,n=0;
+    T.forEach(t=>{const v=sc[t.id];if(typeof v==='number'){tot+=v;n++}});
+    res[st.id]=n?{tot:r1(tot),n,pct:r1(tot/L.max*100),complete:n===T.length}:{tot:null,n:0,pct:null,complete:false}});
+  rankBy(res,'tot');for(const id in res){const r=res[id];if(r.tot!=null)r.grade=gradeOf(r.pct)}
   return res;
 }
+// Subject total = AP1 + AP2. The % is worked out of the periods that already have marks in this class,
+// so grades stay fair before AP2 has been entered.
+function calcTotal(c,s){
+  const L=level(c.grade),per=APS.map(ap=>calc(c,s,ap));
+  const active=APS.filter((ap,i)=>c.students.some(st=>per[i][st.id].tot!=null));
+  const den=L.max*Math.max(1,active.length),res={};
+  c.students.forEach(st=>{const a=per.map(p=>p[st.id]);const have=a.filter(x=>x.tot!=null);
+    const tot=have.length?r1(have.reduce((x,y)=>x+y.tot,0)):null;
+    res[st.id]={aps:a.map(x=>x.tot),tot,pct:tot==null?null:r1(tot/den*100),complete:active.every(ap=>a[ap-1].complete)}});
+  rankBy(res,'tot');for(const id in res){const r=res[id];if(r.tot!=null)r.grade=gradeOf(r.pct)}
+  return {res,den,active,max:L.max*APS.length};
+}
+// Final results: grand total of every subject's total; placing by grand total.
 function calcSummary(c){
-  const per=c.subjects.map(s=>calc(c,s));const res={};
-  c.students.forEach(st=>{
-    const pcts=per.map(p=>p[st.id].pct);const have=pcts.filter(p=>p!=null);
-    res[st.id]={pcts,avg:have.length?r1(have.reduce((a,b)=>a+b,0)/have.length):null,n:have.length};
-  });
-  const avgs=Object.values(res).filter(r=>r.avg!=null).map(r=>r.avg);
-  for(const id in res){const r=res[id];if(r.avg!=null){r.pos=1+avgs.filter(a=>a>r.avg).length;r.grade=gradeOf(r.avg)}}
-  return res;
+  const per=c.subjects.map(s=>calcTotal(c,s));
+  const grandMax=per.filter(p=>p.active.length).reduce((a,p)=>a+p.den,0),res={};
+  c.students.forEach(st=>{const subs=per.map(p=>p.res[st.id]);const have=subs.filter(x=>x.tot!=null);
+    const tot=have.length?r1(have.reduce((a,x)=>a+x.tot,0)):null;
+    const missing=per.filter((p,i)=>p.active.length&&(subs[i].tot==null||!subs[i].complete)).length;
+    res[st.id]={subs,tot,pct:tot==null||!grandMax?null:r1(tot/grandMax*100),missing}});
+  rankBy(res,'tot');for(const id in res){const r=res[id];if(r.tot!=null)r.grade=gradeOf(r.pct)}
+  return {res,per,grandMax};
 }
 function ord(n){const s=['th','st','nd','rd'],v=n%100;return n+(s[(v-20)%10]||s[v]||s[0])}
+function byPos(a,b){return (a.pos||1e9)-(b.pos||1e9)||a.st.name.localeCompare(b.st.name)}
 
 /* ---------- navigation ---------- */
 function go(t){ui.tab=t;save();render()}
@@ -275,7 +298,7 @@ function pickSubject(id){ui.subjectId=id;save();render()}
 function renderTop(){
   $('#schoolName').textContent=S.school.name||'Primary school marks, totals & positions';
   const tc=$('#topClass');
-  tc.innerHTML=S.classes.length?S.classes.map(c=>`<option value="${c.id}" ${c.id===ui.classId?'selected':''}>Grade ${esc(className(c))} · T${esc(c.term)} P${esc(c.period)}</option>`).join(''):'<option>No class yet</option>';
+  tc.innerHTML=S.classes.length?S.classes.map(c=>`<option value="${c.id}" ${c.id===ui.classId?'selected':''}>Grade ${esc(className(c))} · T${esc(c.term)} · ${esc(c.year)}</option>`).join(''):'<option>No class yet</option>';
   const c=cls(),ts=$('#topSubj');
   const showS=c&&c.subjects.length&&['marks','results','subjects'].includes(ui.tab);
   ts.classList.toggle('hide',!showS);
@@ -297,24 +320,25 @@ function needClass(){return `<div class="empty">Create or open a class first.<br
 /* ---------- 1. classes ---------- */
 function vClasses(){
   const list=S.classes.map(c=>{const L=level(c.grade);return `<div class="card cls ${c.id===ui.classId?'sel':''}">
-    <div class="cls-h"><div class="big">${esc(className(c))}</div><div><b>Grade ${esc(className(c))}</b> · ${esc(c.year)} · Term ${esc(c.term)} · Ass. Period ${esc(c.period)}<div class="muted small">Teacher: ${esc(c.teacher||'—')}</div></div><span class="badge ${L.key}">${L.name} · /${L.max}</span></div>
+    <div class="cls-h"><div class="big">${esc(className(c))}</div><div><b>Grade ${esc(className(c))}</b> · ${esc(c.year)} · Term ${esc(c.term)}<div class="muted small">Teacher: ${esc(c.teacher||'—')}</div></div><span class="badge ${L.key}">${L.name} · AP /${L.max} · Total /${L.max*2}</span></div>
     <div class="muted small">${c.students.length} students · ${c.subjects.length} subjects</div>
     <div class="row"><button class="btn pri sm" onclick="openClass('${c.id}')">Open</button><button class="btn sm" onclick="editClass('${c.id}')">Edit</button><button class="btn sm" onclick="copyClass('${c.id}')">Copy for new term</button><button class="btn sm danger" onclick="delClass('${c.id}')">Delete</button></div></div>`}).join('');
   const e=ui.editClass?S.classes.find(c=>c.id===ui.editClass):null;
-  const f=e||{grade:6,section:'',year:new Date().getFullYear(),term:1,period:'01',teacher:''};
+  const f=e||{grade:6,section:'',year:new Date().getFullYear(),term:1,teacher:''};
   const gopt=[3,4,5,6,7,8].map(g=>`<option value="${g}" ${Number(f.grade)===g?'selected':''}>Grade ${g} — ${level(g).name} (/${level(g).max})</option>`).join('');
-  return `<h2>Classes</h2><div class="muted">Lower Primary (Grades 3–5) is marked out of 100. Upper Primary (Grades 6–8) is marked out of 200.</div>
+  return `<h2>Classes</h2><div class="muted">Lower Primary (Grades 3–5): each assessment period out of 100, total 200. Upper Primary (Grades 6–8): each assessment period out of 200, total 400.</div>
   <div class="grid2"><div>${list||'<div class="empty">No classes yet — fill in the form to create your first class.</div>'}</div>
   <div class="card"><h3>${e?'Edit class':'New class'}</h3>
     <label class="f">Grade<select id="f_grade">${gopt}</select></label>
     <div class="two"><label class="f">Class (e.g. D)<input id="f_section" maxlength="4" value="${esc(f.section)}"></label><label class="f">Year<input id="f_year" type="number" value="${esc(f.year)}"></label></div>
-    <div class="two"><label class="f">SAPS file term<select id="f_term">${[1,2,3,4].map(t=>`<option ${Number(f.term)===t?'selected':''}>${t}</option>`).join('')}</select></label><label class="f">Ass. period #<input id="f_period" value="${esc(f.period)}"></label></div>
+    <label class="f">SAPS file term<select id="f_term">${[1,2,3,4].map(t=>`<option ${Number(f.term)===t?'selected':''}>${t}</option>`).join('')}</select></label>
+    <div class="muted small" style="margin:-4px 0 10px">AP1 and AP2 marks for this term are both kept inside the class.</div>
     <label class="f">Class teacher<input id="f_teacher" placeholder="e.g. Mr. Urai" value="${esc(f.teacher)}"></label>
     <div class="row"><button class="btn pri" onclick="saveClass()">${e?'Save changes':'Create class'}</button>${e?'<button class="btn" onclick="ui.editClass=null;render()">Cancel</button>':''}</div>
   </div></div>`;
 }
 function saveClass(){
-  const d={grade:Number($('#f_grade').value),section:$('#f_section').value.trim().toUpperCase(),year:$('#f_year').value.trim(),term:$('#f_term').value,period:$('#f_period').value.trim(),teacher:$('#f_teacher').value.trim()};
+  const d={grade:Number($('#f_grade').value),section:$('#f_section').value.trim().toUpperCase(),year:$('#f_year').value.trim(),term:$('#f_term').value,teacher:$('#f_teacher').value.trim()};
   if(!d.section){alert('Enter the class letter (e.g. D).');return}
   if(ui.editClass){
     const c=S.classes.find(x=>x.id===ui.editClass);
@@ -328,10 +352,10 @@ function openClass(id){ui.classId=id;fixSubject();const c=cls();ui.tab=!c.studen
 function delClass(id){const c=S.classes.find(x=>x.id===id);if(!confirm(`Delete Grade ${className(c)} and ALL its marks? This cannot be undone.`))return;S.classes=S.classes.filter(x=>x.id!==id);if(ui.classId===id)ui.classId=S.classes[0]?S.classes[0].id:null;fixSubject();save();render()}
 function copyClass(id){
   const c=S.classes.find(x=>x.id===id);
-  const n={id:uid(),grade:c.grade,section:c.section,year:c.year,term:Math.min(4,Number(c.term)+1),period:c.period,teacher:c.teacher,
+  const n={id:uid(),grade:c.grade,section:c.section,year:c.year,term:Math.min(4,Number(c.term)+1),teacher:c.teacher,
     students:c.students.map(s=>({...s})),subjects:c.subjects.map(s=>({id:uid(),name:s.name,teacher:s.teacher,tasks:s.tasks.map(t=>({...t,id:uid(),date:''})),scores:{}}))};
   S.classes.push(n);ui.classId=n.id;ui.editClass=n.id;fixSubject();save();render();
-  alert('Copied the student list and subjects (without marks). Check the term and period, then save.');
+  alert('Copied the student list and subjects (without marks). Check the term, then save.');
 }
 
 /* ---------- 2. students ---------- */
@@ -384,38 +408,42 @@ function downloadListTemplate(){
 }
 
 /* ---------- 3. subjects & tasks ---------- */
+function apChips(extra){return `<div class="chips apchips">${APS.map(ap=>`<button class="chip ${ui.ap===ap?'on':''}" onclick="ui.ap=${ap};${extra||''}save();render()"><b>AP${ap}</b><span class="lg"> · Assessment Period ${ap}</span><span class="sh"> · Ass. Period ${ap}</span></button>`).join('')}</div>`}
 function vSubjects(){
-  const c=cls();if(!c)return needClass();const s=subj();const L=level(c.grade);
+  const c=cls();if(!c)return needClass();const s=subj();const L=level(c.grade),ap=ui.ap;
   const chips=c.subjects.map(x=>`<button class="chip ${x.id===ui.subjectId?'on':''}" onclick="pickSubject('${x.id}')">${esc(x.name)}</button>`).join('');
   const missing=QUICK_SUBJECTS.filter(q=>!c.subjects.some(x=>x.name.toLowerCase()===q.toLowerCase()));
   let tasks='';
   if(s){
-    const sum=s.tasks.reduce((a,t)=>a+(Number(t.max)||0),0);
-    const st=sum===L.max?`<div class="note ok">Tasks add up to ${sum} / ${L.max}. Ready for marks.</div>`:sum>L.max?`<div class="note bad">Tasks add up to ${sum}, which is more than ${L.max}. Reduce some task marks.</div>`:`<div class="note warn">Tasks add up to ${sum} of ${L.max}. ${L.max-sum} marks still to be assigned to tasks.</div>`;
+    const T=tasksOf(s,ap),other=tasksOf(s,3-ap);
+    const sum=T.reduce((a,t)=>a+(Number(t.max)||0),0);
+    const st=sum===L.max?`<div class="note ok">AP${ap} tasks add up to ${sum} / ${L.max}. Ready for marks.</div>`:sum>L.max?`<div class="note bad">AP${ap} tasks add up to ${sum}, which is more than ${L.max}. Reduce some task marks.</div>`:`<div class="note warn">AP${ap} tasks add up to ${sum} of ${L.max}. ${L.max-sum} marks still to be assigned to tasks.</div>`;
     tasks=`<div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">${esc(s.name)} — assessment tasks</h3><div class="row"><button class="btn sm" onclick="renameSubj()">Rename</button><button class="btn sm danger" onclick="delSubj()">Delete subject</button></div></div>
       <label class="f" style="margin-top:10px">Subject teacher (if different from class teacher)<input value="${esc(s.teacher||'')}" onchange="subj().teacher=this.value.trim();save()"></label>
+      ${apChips()}
       <div class="meter ${sum>L.max?'over':''}"><i style="width:${Math.min(100,sum/L.max*100)}%"></i></div>${st}
-      ${s.tasks.length?`<table class="t tasks"><thead><tr><th class="c" style="width:60px">Task No</th><th>Task name</th><th style="width:130px">Ass. type</th><th style="width:150px">Date</th><th class="c" style="width:90px">Out of</th><th style="width:80px"></th></tr></thead><tbody>
-      ${s.tasks.map((t,i)=>`<tr><td class="c">${i+1}</td><td><input class="cell" value="${esc(t.label)}" onchange="setTask('${t.id}','label',this.value)"></td>
+      ${T.length?`<table class="t tasks"><thead><tr><th class="c" style="width:60px">Task No</th><th>Task name</th><th style="width:130px">Ass. type</th><th style="width:150px">Date</th><th class="c" style="width:90px">Out of</th><th style="width:80px"></th></tr></thead><tbody>
+      ${T.map((t,i)=>`<tr><td class="c">${i+1}</td><td><input class="cell" value="${esc(t.label)}" onchange="setTask('${t.id}','label',this.value)"></td>
       <td><select onchange="setTask('${t.id}','type',this.value)">${TYPES.map(y=>`<option ${t.type===y?'selected':''}>${y}</option>`).join('')}</select></td>
       <td><input class="cell" type="date" value="${esc(t.date||'')}" onchange="setTask('${t.id}','date',this.value)"></td>
       <td><input class="cell" type="number" min="1" step="0.5" value="${esc(t.max)}" style="text-align:center" onchange="setTask('${t.id}','max',this.value)"></td>
-      <td class="c"><button class="btn sm danger" onclick="delTask('${t.id}')">Delete</button></td></tr>`).join('')}</tbody></table>`:'<div class="empty">No tasks yet. Add the tests, assignments and projects for this assessment period.</div>'}
-      <div class="toolbar"><button class="btn pri" onclick="addTask()">+ Add task</button>${s.tasks.length===0?`<button class="btn" onclick="splitTasks()">Set up equal tasks…</button>`:''}${c.subjects.length>1?`<button class="btn" onclick="copyTasks()">Copy these tasks to other subjects</button>`:''}</div></div>`;
+      <td class="c"><button class="btn sm danger" onclick="delTask('${t.id}')">Delete</button></td></tr>`).join('')}</tbody></table>`:`<div class="empty">No AP${ap} tasks yet. Add the tests, assignments and projects for Assessment Period ${ap}.</div>`}
+      <div class="toolbar"><button class="btn pri" onclick="addTask()">+ Add task</button>${!T.length&&other.length?`<button class="btn" onclick="copyAP()">Copy AP${3-ap} tasks to AP${ap}</button>`:''}${!T.length?`<button class="btn" onclick="splitTasks()">Set up equal tasks…</button>`:''}${c.subjects.length>1&&T.length?`<button class="btn" onclick="copyTasks()">Copy these AP${ap} tasks to other subjects</button>`:''}</div></div>`;
   }
-  return `<h2>Subjects &amp; Tasks — Grade ${esc(className(c))}</h2><div class="muted">${L.name}: the marks for all tasks in a subject must add up to <b>${L.max}</b>.</div>
-  <div class="card" style="margin-top:14px"><h3>Subjects</h3><div class="chips">${chips||'<span class="muted">No subjects yet.</span>'}</div>
-  ${missing.length?`<div class="muted small" style="margin-top:8px">Quick add:</div><div class="chips">${missing.map(q=>`<button class="chip add" onclick="addSubj(${esc(JSON.stringify(q))})">+ ${esc(q)}</button>`).join('')}</div>`:''}
-  <div class="row" style="margin-top:6px"><input id="sub_new" placeholder="Other subject name" style="padding:7px 9px;border:1px solid var(--line);border-radius:7px" onkeydown="if(event.key==='Enter')addSubj(this.value)"><button class="btn" onclick="addSubj($('#sub_new').value)">Add subject</button></div></div>
+  return `<h2>Subjects &amp; Tasks — Grade ${esc(className(c))}</h2><div class="muted">${L.name}: each assessment period is out of <b>${L.max}</b>, so a subject's total (AP1 + AP2) is out of <b>${L.max*2}</b>.</div>
+  <div class="card" style="margin-top:14px"><h3>Subjects (${c.subjects.length})</h3><div class="chips">${chips||'<span class="muted">No subjects yet — add one below.</span>'}</div>
+  <div class="row" style="margin-top:8px"><input id="sub_new" placeholder="Subject name" style="flex:1;min-width:150px;padding:8px 9px;border:1px solid var(--line);border-radius:7px" onkeydown="if(event.key==='Enter')addSubj(this.value)"><button class="btn pri" onclick="addSubj($('#sub_new').value)">+ Add subject</button></div>
+  ${missing.length?`<div class="muted small" style="margin-top:10px">Quick add:</div><div class="chips">${missing.map(q=>`<button class="chip add" onclick="addSubj(${esc(JSON.stringify(q))})">+ ${esc(q)}</button>`).join('')}</div>`:''}</div>
   ${tasks}`;
 }
 function addSubj(name){name=String(name||'').trim();if(!name)return;const c=cls();if(c.subjects.some(x=>x.name.toLowerCase()===name.toLowerCase())){alert('That subject is already added.');return}
-  const s={id:uid(),name,teacher:'',tasks:[],scores:{}};c.subjects.push(s);ui.subjectId=s.id;save();render()}
+  const s={id:uid(),name,teacher:'',tasks:[],scores:{}};c.subjects.push(s);ui.subjectId=s.id;ui.tab='subjects';save();render()}
 function renameSubj(){const s=subj();const n=prompt('Subject name',s.name);if(n&&n.trim()){s.name=n.trim();save();render()}}
-function delSubj(){const c=cls(),s=subj();if(!confirm(`Delete ${s.name} and all its marks?`))return;c.subjects=c.subjects.filter(x=>x.id!==s.id);fixSubject();save();render()}
-function addTask(){const s=subj(),L=level(cls().grade);const left=Math.max(0,L.max-s.tasks.reduce((a,t)=>a+(Number(t.max)||0),0));s.tasks.push({id:uid(),label:'Task '+(s.tasks.length+1),type:'Test',date:'',max:left||10});save();render()}
-function splitTasks(){const L=level(cls().grade);const n=parseInt(prompt(`How many tasks? The ${L.max} marks will be shared equally.`,'4'),10);if(!(n>0&&n<=20))return;const s=subj();const each=Math.floor(L.max/n*2)/2;
-  for(let i=0;i<n;i++)s.tasks.push({id:uid(),label:'Task '+(i+1),type:'Test',date:'',max:i===n-1?r1(L.max-each*(n-1)):each});save();render()}
+function delSubj(){const c=cls(),s=subj();if(!confirm(`Delete ${s.name} and all its marks (AP1 and AP2)?`))return;c.subjects=c.subjects.filter(x=>x.id!==s.id);fixSubject();save();render()}
+function addTask(){const s=subj(),L=level(cls().grade),T=tasksOf(s,ui.ap);const left=Math.max(0,L.max-T.reduce((a,t)=>a+(Number(t.max)||0),0));s.tasks.push({id:uid(),ap:ui.ap,label:'Task '+(T.length+1),type:'Test',date:'',max:left||10});save();render()}
+function splitTasks(){const L=level(cls().grade);const n=parseInt(prompt(`How many AP${ui.ap} tasks? The ${L.max} marks will be shared equally.`,'4'),10);if(!(n>0&&n<=20))return;const s=subj();const each=Math.floor(L.max/n*2)/2;
+  for(let i=0;i<n;i++)s.tasks.push({id:uid(),ap:ui.ap,label:'Task '+(i+1),type:'Test',date:'',max:i===n-1?r1(L.max-each*(n-1)):each});save();render()}
+function copyAP(){const s=subj();tasksOf(s,3-ui.ap).forEach(t=>s.tasks.push({...t,id:uid(),ap:ui.ap,date:''}));save();render()}
 function setTask(id,k,v){const s=subj(),t=s.tasks.find(x=>x.id===id);
   if(k==='max'){const n=Number(v);if(!(n>0)){alert('Enter a mark above 0.');render();return}
     const over=Object.values(s.scores).filter(sc=>typeof sc[id]==='number'&&sc[id]>n).length;
@@ -423,38 +451,40 @@ function setTask(id,k,v){const s=subj(),t=s.tasks.find(x=>x.id===id);
     Object.values(s.scores).forEach(sc=>{if(typeof sc[id]==='number'&&sc[id]>n)delete sc[id]});t.max=n}
   else t[k]=String(v).trim();save();render()}
 function delTask(id){const s=subj();const has=Object.values(s.scores).some(sc=>typeof sc[id]==='number');if(has&&!confirm('This task already has marks. Delete it and its marks?'))return;s.tasks=s.tasks.filter(t=>t.id!==id);Object.values(s.scores).forEach(sc=>delete sc[id]);save();render()}
-function copyTasks(){const c=cls(),s=subj();const others=c.subjects.filter(x=>x.id!==s.id&&!x.tasks.length);
-  if(!others.length){alert('All other subjects already have tasks. Only subjects with no tasks are filled.');return}
-  if(!confirm(`Copy ${s.tasks.length} task(s) to: ${others.map(o=>o.name).join(', ')}?`))return;
-  others.forEach(o=>o.tasks=s.tasks.map(t=>({...t,id:uid()})));save();render()}
+function copyTasks(){const c=cls(),s=subj(),ap=ui.ap;const others=c.subjects.filter(x=>x.id!==s.id&&!tasksOf(x,ap).length);
+  if(!others.length){alert(`All other subjects already have AP${ap} tasks. Only subjects with no AP${ap} tasks are filled.`);return}
+  if(!confirm(`Copy ${tasksOf(s,ap).length} AP${ap} task(s) to: ${others.map(o=>o.name).join(', ')}?`))return;
+  others.forEach(o=>tasksOf(s,ap).forEach(t=>o.tasks.push({...t,id:uid()})));save();render()}
 
 /* ---------- 4. marks entry ---------- */
 function vMarks(){
-  const c=cls();if(!c)return needClass();const s=subj();const L=level(c.grade);
+  const c=cls();if(!c)return needClass();const s=subj();const L=level(c.grade),ap=ui.ap;
   if(!c.students.length)return `<h2>Marks Entry</h2><div class="empty">Add students first.<br><br><button class="btn pri" onclick="go('students')">Go to Students</button></div>`;
-  if(!s||!s.tasks.length)return `<h2>Marks Entry</h2><div class="empty">${s?'Add assessment tasks for '+esc(s.name)+' first.':'Add a subject first.'}<br><br><button class="btn pri" onclick="go('subjects')">Go to Subjects &amp; Tasks</button></div>`;
-  const sum=s.tasks.reduce((a,t)=>a+Number(t.max),0);
-  if(ui.mtask!=='all'&&!s.tasks.some(t=>t.id===ui.mtask))ui.mtask=window.innerWidth<=820?s.tasks[0].id:'all';
-  const res=calc(c,s);
-  const head=`<tr><th class="c">No</th><th class="nm">Name (Surname First)</th><th class="c">Sex</th>${s.tasks.map((t,j)=>`<th class="c">${esc(t.label)}<span class="tt">${esc(t.type)}${t.date?' · '+esc(t.date):''}</span><span class="tt">/ ${esc(t.max)}</span></th>`).join('')}<th class="c">TOT<span class="tt">/ ${L.max}</span></th><th class="c">%</th><th class="c">Position</th><th class="c">Grade</th></tr>`;
+  if(!s)return `<h2>Marks Entry</h2><div class="empty">Add a subject first.<br><br><button class="btn pri" onclick="go('subjects')">+ Add subject</button></div>`;
+  const T=tasksOf(s,ap);
+  const top=`<h2>Marks Entry — ${esc(s.name)}, Grade ${esc(className(c))}</h2>
+  <div class="muted">Term ${esc(c.term)} · ${L.name} · each AP out of ${L.max}. Type a mark and press Enter to go down. Marks save automatically.</div>${apChips()}`;
+  if(!T.length)return top+`<div class="empty">No AP${ap} tasks set up for ${esc(s.name)} yet.<br><br><button class="btn pri" onclick="go('subjects')">Set up AP${ap} tasks</button></div>`;
+  const sum=T.reduce((a,t)=>a+Number(t.max),0);
+  if(ui.mtask!=='all'&&!T.some(t=>t.id===ui.mtask))ui.mtask=window.innerWidth<=820?T[0].id:'all';
+  const res=calc(c,s,ap);
+  const head=`<tr><th class="c">No</th><th class="nm">Name (Surname First)</th><th class="c">Sex</th>${T.map(t=>`<th class="c">${esc(t.label)}<span class="tt">${esc(t.type)}${t.date?' · '+esc(t.date):''}</span><span class="tt">/ ${esc(t.max)}</span></th>`).join('')}<th class="c">AP${ap} TOT<span class="tt">/ ${L.max}</span></th><th class="c">%</th><th class="c">Position</th><th class="c">Grade</th></tr>`;
   const body=c.students.map((st,i)=>{const sc=s.scores[st.id]||{},r=res[st.id];return `<tr data-sid="${st.id}"><td class="ro">${i+1}</td><td class="nm">${esc(st.name)}</td><td class="ro">${esc(st.sex)}</td>
-    ${s.tasks.map((t,j)=>`<td><input class="sc" inputmode="decimal" data-s="${st.id}" data-t="${t.id}" data-r="${i}" data-c="${j}" value="${typeof sc[t.id]==='number'?sc[t.id]:''}" title="0 – ${esc(t.max)}"></td>`).join('')}
+    ${T.map((t,j)=>`<td><input class="sc" inputmode="decimal" data-s="${st.id}" data-t="${t.id}" data-r="${i}" data-c="${j}" value="${typeof sc[t.id]==='number'?sc[t.id]:''}" title="0 – ${esc(t.max)}"></td>`).join('')}
     <td class="ro" data-k="tot">${r.tot??''}</td><td class="ro" data-k="pct">${r.pct??''}</td><td class="ro" data-k="pos">${r.pos?ord(r.pos):''}</td><td class="ro" data-k="grade">${gChip(r.grade)}</td></tr>`}).join('');
-  return `<h2>Marks Entry — ${esc(s.name)}, Grade ${esc(className(c))}</h2>
-  <div class="muted">Term ${esc(c.term)} · Ass. Period ${esc(c.period)} · ${L.name}, out of ${L.max}. Type a mark and press Enter to go down. Marks save automatically.</div>
-  ${sum!==L.max?`<div class="note warn">The tasks for this subject add up to ${sum}, not ${L.max}. Percentages are still worked out of ${L.max}. <a href="#" onclick="go('subjects');return false">Fix tasks</a></div>`:''}
-  <div class="toolbar"><button class="btn" onclick="exportSubject()">Export to Excel</button><button class="btn" onclick="importMarks()">Import marks from Excel</button><button class="btn" onclick="printSAPS(false)">Print SAPS sheet</button><button class="btn" onclick="printSAPS(true)">Print blank SAPS sheet</button></div>
-  <div class="chips">${s.tasks.map(t=>`<button class="chip ${ui.mtask===t.id?'on':''}" onclick="ui.mtask='${t.id}';render()">${esc(t.label)} /${esc(t.max)}</button>`).join('')}<button class="chip ${ui.mtask==='all'?'on':''}" onclick="ui.mtask='all';render()">All tasks (table)</button></div>
+  return top+`${sum!==L.max?`<div class="note warn">The AP${ap} tasks add up to ${sum}, not ${L.max}. Percentages are still worked out of ${L.max}. <a href="#" onclick="go('subjects');return false">Fix tasks</a></div>`:''}
+  <div class="toolbar"><button class="btn" onclick="exportSubject()">Export to Excel</button><button class="btn" onclick="importMarks()">Import AP${ap} marks from Excel</button><button class="btn" onclick="printSAPS(false)">Print AP${ap} SAPS sheet</button><button class="btn" onclick="printSAPS(true)">Print blank SAPS sheet</button></div>
+  <div class="chips">${T.map(t=>`<button class="chip ${ui.mtask===t.id?'on':''}" onclick="ui.mtask='${t.id}';render()">${esc(t.label)} /${esc(t.max)}</button>`).join('')}<button class="chip ${ui.mtask==='all'?'on':''}" onclick="ui.mtask='all';render()">All tasks (table)</button></div>
   <div id="gridErr" class="note bad hide"></div>
   ${ui.mtask==='all'?`<div class="gridwrap"><table class="t marks" id="grid"><thead>${head}</thead><tbody>${body}</tbody></table></div>`:taskList(c,s,res)}`;
 }
 function taskList(c,s,res){
-  const j=s.tasks.findIndex(t=>t.id===ui.mtask),t=s.tasks[j];
+  const t=s.tasks.find(x=>x.id===ui.mtask);
   const done=c.students.filter(st=>typeof (s.scores[st.id]||{})[t.id]==='number').length;
-  return `<div class="muted small" style="margin-bottom:6px"><b>${esc(t.label)}</b> · ${esc(t.type)}${t.date?' · '+esc(t.date):''} · out of ${esc(t.max)} · <span id="doneCount">${done}</span>/${c.students.length} entered</div>
+  return `<div class="muted small" style="margin-bottom:6px"><b>AP${ui.ap} · ${esc(t.label)}</b> · ${esc(t.type)}${t.date?' · '+esc(t.date):''} · out of ${esc(t.max)} · <span id="doneCount">${done}</span>/${c.students.length} entered</div>
   <div class="mlist" id="grid">${c.students.map((st,i)=>{const sc=s.scores[st.id]||{},r=res[st.id];return `<div class="mrow" data-sid="${st.id}"><div class="no">${i+1}</div><div class="nm2">${esc(st.name)}<small>${esc(st.sex)}</small></div>
     <input class="sc" inputmode="decimal" enterkeyhint="next" data-s="${st.id}" data-t="${t.id}" data-r="${i}" data-c="0" value="${typeof sc[t.id]==='number'?sc[t.id]:''}" placeholder="–" aria-label="${esc(st.name)} ${esc(t.label)}">
-    <div class="rk">TOT <b data-k="tot">${r.tot??'–'}</b><br><span data-k="pos">${r.pos?ord(r.pos):''}</span> <span data-k="grade">${gChip(r.grade)}</span><span data-k="pct" class="hide"></span></div></div>`}).join('')}</div>`;
+    <div class="rk">AP${ui.ap} <b data-k="tot">${r.tot??'–'}</b><br><span data-k="pos">${r.pos?ord(r.pos):''}</span> <span data-k="grade">${gChip(r.grade)}</span><span data-k="pct" class="hide"></span></div></div>`}).join('')}</div>`;
 }
 function bindGrid(){
   const g=$('#grid');if(!g)return;
@@ -476,7 +506,7 @@ function onScore(inp){
   save();updateCalc();
 }
 function updateCalc(){
-  const c=cls(),s=subj(),res=calc(c,s);
+  const c=cls(),s=subj(),res=calc(c,s,ui.ap);
   const dc=$('#doneCount');if(dc&&ui.mtask!=='all')dc.textContent=c.students.filter(st=>typeof (s.scores[st.id]||{})[ui.mtask]==='number').length;
   document.querySelectorAll('#grid [data-sid]').forEach(tr=>{const r=res[tr.dataset.sid];
     tr.querySelector('[data-k=tot]').textContent=r.tot??'';tr.querySelector('[data-k=pct]').textContent=r.pct??'';
@@ -497,31 +527,54 @@ function statBlock(list){ // list of {pct,sex}
 }
 function vResults(){
   const c=cls();if(!c)return needClass();const s=subj();
-  if(!s)return `<h2>Results &amp; Ranking</h2><div class="empty">Add a subject first.<br><br><button class="btn pri" onclick="go('subjects')">Go to Subjects &amp; Tasks</button></div>`;
-  const L=level(c.grade),res=calc(c,s);
-  const rows=c.students.map((st,i)=>({st,no:i+1,...res[st.id]})).sort((a,b)=>(a.pos||1e9)-(b.pos||1e9)||a.st.name.localeCompare(b.st.name));
+  if(!s)return `<h2>Results &amp; Ranking</h2><div class="empty">Add a subject first.<br><br><button class="btn pri" onclick="go('subjects')">+ Add subject</button></div>`;
+  const L=level(c.grade),view=ui.rview||'total';
+  const chips=`<div class="chips">${APS.map(ap=>`<button class="chip ${view===String(ap)?'on':''}" onclick="ui.rview='${ap}';ui.ap=${ap};save();render()"><b>AP${ap}</b></button>`).join('')}<button class="chip ${view==='total'?'on':''}" onclick="ui.rview='total';render()"><b>Total</b> (AP1 + AP2)</button></div>`;
+  const tb=`<div class="toolbar"><button class="btn pri" onclick="exportSubject()">Export to Excel</button>${view!=='total'?`<button class="btn" onclick="printSAPS(false)">Print AP${view} SAPS sheet</button>`:''}<button class="btn" onclick="printRanking()">Print ranking list</button></div>`;
+  const title=`<h2>Results &amp; Ranking — ${esc(s.name)}, Grade ${esc(className(c))}</h2>`;
+  if(view==='total'){
+    const t=calcTotal(c,s),res=t.res;
+    const rows=c.students.map((st,i)=>({st,no:i+1,...res[st.id]})).sort(byPos);
+    const inc=rows.filter(r=>r.tot!=null&&!r.complete).length;
+    return title+`<div class="muted">Term ${esc(c.term)} · Total = AP1 + AP2, out of ${t.max}. Tied students share a position (1, 2, 2, 4).</div>${chips}${tb}
+    ${t.active.length===1?`<div class="note warn">Only AP${t.active[0]} has marks so far, so the % and grade are worked out of ${t.den}. They will be out of ${t.max} once AP${3-t.active[0]} marks are entered.</div>`:''}
+    ${statBlock(c.students.map(st=>({pct:res[st.id].pct,sex:st.sex})))}
+    ${inc?`<div class="note warn">${inc} student(s) are missing some marks (marked *). Their position may change.</div>`:''}
+    <div class="gridwrap"><table class="t"><thead><tr><th class="c">Position</th><th>Name</th><th class="c">Sex</th><th class="c">AP1 /${L.max}</th><th class="c">AP2 /${L.max}</th><th class="c">Total /${t.max}</th><th class="c">%</th><th class="c">Grade</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr class="${r.pos===1?'pos1':''}"><td class="c"><b>${r.pos?ord(r.pos):'—'}</b></td><td>${esc(r.st.name)}${r.tot!=null&&!r.complete?' *':''}</td><td class="c">${esc(r.st.sex)}</td>${r.aps.map(a=>`<td class="c">${a??''}</td>`).join('')}<td class="c"><b>${r.tot??''}</b></td><td class="c">${r.pct??''}</td><td class="c">${gChip(r.grade)}</td></tr>`).join('')}</tbody></table></div>`;
+  }
+  const ap=Number(view),res=calc(c,s,ap);
+  const rows=c.students.map((st,i)=>({st,no:i+1,...res[st.id]})).sort(byPos);
   const inc=rows.filter(r=>r.tot!==null&&!r.complete).length;
-  return `<h2>Results &amp; Ranking — ${esc(s.name)}, Grade ${esc(className(c))}</h2><div class="muted">Term ${esc(c.term)} · Ass. Period ${esc(c.period)} · out of ${L.max}. Tied students share a position (e.g. 1, 2, 2, 4).</div>
-  <div class="toolbar"><button class="btn pri" onclick="exportSubject()">Export to Excel</button><button class="btn" onclick="printSAPS(false)">Print SAPS sheet</button><button class="btn" onclick="printRanking()">Print ranking list</button></div>
+  return title+`<div class="muted">Term ${esc(c.term)} · Assessment Period ${ap} · out of ${L.max}. Tied students share a position (1, 2, 2, 4).</div>${chips}${tb}
   ${statBlock(c.students.map(st=>({pct:res[st.id].pct,sex:st.sex})))}
   ${inc?`<div class="note warn">${inc} student(s) are missing marks for some tasks (marked *). Their position may change.</div>`:''}
-  <table class="t"><thead><tr><th class="c">Position</th><th>Name</th><th class="c">Sex</th><th class="c">No</th><th class="c">TOT /${L.max}</th><th class="c">%</th><th class="c">Grade</th></tr></thead><tbody>
+  <table class="t"><thead><tr><th class="c">Position</th><th>Name</th><th class="c">Sex</th><th class="c">No</th><th class="c">AP${ap} TOT /${L.max}</th><th class="c">%</th><th class="c">Grade</th></tr></thead><tbody>
   ${rows.map(r=>`<tr class="${r.pos===1?'pos1':''}"><td class="c"><b>${r.pos?ord(r.pos):'—'}</b></td><td>${esc(r.st.name)}${r.tot!==null&&!r.complete?' *':''}</td><td class="c">${esc(r.st.sex)}</td><td class="c">${r.no}</td><td class="c">${r.tot??''}</td><td class="c">${r.pct??''}</td><td class="c">${gChip(r.grade)}</td></tr>`).join('')}</tbody></table>`;
 }
 
-/* ---------- 6. class summary ---------- */
+/* ---------- 6. final results (all subjects) ---------- */
+function addSubjectBtn(cl){return `<button class="btn ${cl||''}" onclick="go('subjects');setTimeout(()=>{const i=$('#sub_new');if(i){i.scrollIntoView({block:'center'});i.focus()}},60)">+ Add subject</button>`}
 function vSummary(){
   const c=cls();if(!c)return needClass();
-  if(!c.subjects.length)return `<h2>Class Summary</h2><div class="empty">Add subjects and marks first.</div>`;
-  const res=calcSummary(c);
-  const rows=c.students.map((st,i)=>({st,no:i+1,...res[st.id]})).sort((a,b)=>(a.pos||1e9)-(b.pos||1e9)||a.st.name.localeCompare(b.st.name));
-  const subAvg=c.subjects.map((s,j)=>{const v=c.students.map(st=>res[st.id].pcts[j]).filter(x=>x!=null);return v.length?r1(v.reduce((a,b)=>a+b,0)/v.length):''});
-  return `<h2>Class Summary — Grade ${esc(className(c))}</h2><div class="muted">Overall position uses each student's average percentage across all subjects with marks.</div>
-  <div class="toolbar"><button class="btn pri" onclick="exportSummary()">Export class summary to Excel</button><button class="btn" onclick="exportAll()">Export all subjects (one workbook)</button><button class="btn" onclick="printSummary()">Print summary</button></div>
-  ${statBlock(c.students.map(st=>({pct:res[st.id].avg,sex:st.sex})))}
-  <div class="gridwrap"><table class="t"><thead><tr><th class="c">Pos</th><th>Name</th><th class="c">Sex</th>${c.subjects.map(s=>`<th class="c">${esc(s.name)} %</th>`).join('')}<th class="c">Average %</th><th class="c">Grade</th></tr></thead><tbody>
-  ${rows.map(r=>`<tr class="${r.pos===1?'pos1':''}"><td class="c"><b>${r.pos?ord(r.pos):'—'}</b></td><td>${esc(r.st.name)}</td><td class="c">${esc(r.st.sex)}</td>${r.pcts.map(p=>`<td class="c">${p??''}</td>`).join('')}<td class="c"><b>${r.avg??''}</b></td><td class="c">${gChip(r.grade)}</td></tr>`).join('')}
-  <tr><td></td><td><b>Subject average</b></td><td></td>${subAvg.map(a=>`<td class="c"><b>${a}</b></td>`).join('')}<td></td><td></td></tr></tbody></table></div>`;
+  if(!c.subjects.length)return `<h2>Final Results</h2><div class="empty">Add subjects and marks first.<br><br>${addSubjectBtn('pri')}</div>`;
+  const {res,per,grandMax}=calcSummary(c),L=level(c.grade),det=!!ui.sumDetail;
+  const rows=c.students.map((st,i)=>({st,no:i+1,...res[st.id]})).sort(byPos);
+  const avg=v=>{v=v.filter(x=>x!=null);return v.length?r1(v.reduce((a,b)=>a+b,0)/v.length):''};
+  const head=c.subjects.map((s,j)=>det?`<th class="c">${esc(s.name)}<span class="tt">AP1 /${L.max}</span></th><th class="c">${esc(s.name)}<span class="tt">AP2 /${L.max}</span></th><th class="c">${esc(s.name)}<span class="tt">Total /${per[j].max}</span></th>`:`<th class="c">${esc(s.name)}<span class="tt">/ ${per[j].max}</span></th>`).join('');
+  const cells=r=>r.subs.map(x=>det?`<td class="c">${x.aps[0]??''}</td><td class="c">${x.aps[1]??''}</td><td class="c"><b>${x.tot??''}</b></td>`:`<td class="c">${x.tot??''}</td>`).join('');
+  const avgRow=per.map((p,j)=>{const a=avg(c.students.map(st=>p.res[st.id].tot));return det?`<td class="c">${avg(c.students.map(st=>p.res[st.id].aps[0]))}</td><td class="c">${avg(c.students.map(st=>p.res[st.id].aps[1]))}</td><td class="c"><b>${a}</b></td>`:`<td class="c"><b>${a}</b></td>`}).join('');
+  const inc=rows.filter(r=>r.tot!=null&&r.missing).length;
+  const partial=per.some(p=>p.active.length===1);
+  return `<h2>Final Results — Grade ${esc(className(c))}</h2><div class="muted">Term ${esc(c.term)} · ${c.subjects.length} subjects. Each subject total is AP1 + AP2 (out of ${L.max*2}). Final placing uses the grand total of all subjects${grandMax?` (out of ${grandMax})`:''}. Tied students share a position.</div>
+  <div class="toolbar"><button class="btn pri" onclick="exportAll()">Export final results to Excel</button><button class="btn" onclick="printSummary()">Print final results</button>${addSubjectBtn()}</div>
+  ${partial?`<div class="note warn">Some subjects only have one assessment period entered so far; their totals are worked out of ${L.max} until the other AP is entered.</div>`:''}
+  ${statBlock(c.students.map(st=>({pct:res[st.id].pct,sex:st.sex})))}
+  ${inc?`<div class="note warn">${inc} student(s) are missing some marks (marked *). Their placing may change.</div>`:''}
+  <label class="row small" style="margin:6px 0 10px;cursor:pointer"><input type="checkbox" ${det?'checked':''} onchange="ui.sumDetail=this.checked;render()"> Show AP1 and AP2 for each subject</label>
+  <div class="gridwrap"><table class="t"><thead><tr><th class="c">Position</th><th>Name</th><th class="c">Sex</th>${head}<th class="c">Grand Total<span class="tt">/ ${grandMax}</span></th><th class="c">%</th><th class="c">Grade</th></tr></thead><tbody>
+  ${rows.map(r=>`<tr class="${r.pos===1?'pos1':''}"><td class="c"><b>${r.pos?ord(r.pos):'—'}</b></td><td style="white-space:nowrap">${esc(r.st.name)}${r.tot!=null&&r.missing?' *':''}</td><td class="c">${esc(r.st.sex)}</td>${cells(r)}<td class="c"><b>${r.tot??''}</b></td><td class="c">${r.pct??''}</td><td class="c">${gChip(r.grade)}</td></tr>`).join('')}
+  <tr><td></td><td><b>Class average</b></td><td></td>${avgRow}<td class="c"><b>${avg(rows.map(r=>r.tot))}</b></td><td class="c"><b>${avg(rows.map(r=>r.pct))}</b></td><td></td></tr></tbody></table></div>`;
 }
 
 /* ---------- settings ---------- */
@@ -538,7 +591,7 @@ function vSettings(){
   <div class="card"><h3>Backup &amp; restore</h3><div class="muted small">Marks are kept on this device only — clearing the app's data or losing the phone loses them. Save a backup every week (to Google Drive, WhatsApp, email or a flash drive) and before handing in SAPS files.</div>
     <div class="toolbar"><button class="btn pri" onclick="backup()">Save backup file</button><button class="btn" onclick="restore()">Restore from backup</button></div>
     <div class="muted small">${S.lastBackup?'Last backup: '+new Date(S.lastBackup).toLocaleString():'No backup made yet.'}</div></div>
-  <div class="card"><h3>About</h3><div class="muted small">SAPS Grade Book v1.0 · works offline · Lower Primary (Gr 3–5) /100, Upper Primary (Gr 6–8) /200.<br>Excel files: use <b>Export</b> to share marks to Excel and <b>Import</b> to bring edited marks back. Printing on a phone opens Android's print screen, where you can choose <b>Save as PDF</b>.<br><br>Developed by Ready Digital Consultancy, Kokopo, ENB · 70254566 · tulezready@gmail.com</div></div>
+  <div class="card"><h3>About</h3><div class="muted small">SAPS Grade Book v1.1 · works offline · Lower Primary (Gr 3–5): AP /100, total /200 · Upper Primary (Gr 6–8): AP /200, total /400.<br>Excel files: use <b>Export</b> to share marks to Excel and <b>Import</b> to bring edited marks back. Printing on a phone opens Android's print screen, where you can choose <b>Save as PDF</b>.<br><br>Developed by Ready Digital Consultancy, Kokopo, ENB · 70254566 · tulezready@gmail.com</div></div>
   <div class="card"><h3>Start fresh</h3><div class="muted small">Deletes every class and mark on this device.</div><div class="toolbar"><button class="btn danger" onclick="wipe()">Delete all data</button></div></div></div>`;
 }
 function saveSchool(){S.school={name:$('#sc_name').value.trim(),address:$('#sc_addr').value.trim(),phone:$('#sc_phone').value.trim()};save();render()}
@@ -554,85 +607,123 @@ function backup(){
 function restore(){pickFile('.json',file=>{const r=new FileReader();r.onload=e=>{let d;try{d=JSON.parse(e.target.result)}catch(x){alert('That is not a Grade Book backup file.');return}
   if(!d||!Array.isArray(d.classes)||!d.classes.every(c=>c.id&&Array.isArray(c.students)&&Array.isArray(c.subjects))){alert('That is not a Grade Book backup file.');return}
   if(!confirm(`Restore ${d.classes.length} class(es) from this backup? Everything currently in the app will be replaced.`))return;
-  S=d;if(!S.school)S.school={name:'',address:'',phone:''};if(!S.bands||!S.bands.length)S.bands=JSON.parse(JSON.stringify(DEF_BANDS));ui.classId=S.classes[0]?S.classes[0].id:null;fixSubject();ui.tab='classes';save();render();alert('Backup restored.')};r.readAsText(file)})}
-function wipe(){if(!confirm('Delete ALL classes, students and marks on this device?'))return;if(prompt('Type DELETE to confirm')!=='DELETE')return;S=defState();ui={tab:'classes',classId:null,subjectId:null,editClass:null};save();render()}
+  S=d;migrate();if(!S.school)S.school={name:'',address:'',phone:''};if(!S.bands||!S.bands.length)S.bands=JSON.parse(JSON.stringify(DEF_BANDS));ui.classId=S.classes[0]?S.classes[0].id:null;fixSubject();ui.tab='classes';save();render();alert('Backup restored.')};r.readAsText(file)})}
+function wipe(){if(!confirm('Delete ALL classes, students and marks on this device?'))return;if(prompt('Type DELETE to confirm')!=='DELETE')return;S=defState();ui={tab:'classes',classId:null,subjectId:null,editClass:null,ap:1,rview:'total',sumDetail:false};save();render()}
 
 /* ---------- Excel export / import ---------- */
 const A=(r,c)=>XLSX.utils.encode_cell({r,c});
-function headerRows(c,title2){
+const abs=x=>x.replace(/^([A-Z]+)(\d+)$/,'$$$1$$$2');
+const qs=n=>`'${n.replace(/'/g,"''")}'`;
+function headerRows(c,title2,ap){
   return [[S.school.name||'SCHOOL NAME'],[[S.school.address,S.school.phone?'PH#: '+S.school.phone:''].filter(Boolean).join('   ')],
-    [`SAPS FILE TERM: ${c.term}     ASS. PERIOD #: ${c.period}     GRADE: ${className(c)}     YEAR: ${c.year}`],[title2]];
+    [`SAPS FILE TERM: ${c.term}     ${ap?`ASS. PERIOD #: 0${ap}     `:''}GRADE: ${className(c)}     YEAR: ${c.year}`],[title2]];
 }
 function gradeFormula(cell){const b=bands();let f=`"${b[b.length-1].g}"`;for(let i=b.length-2;i>=0;i--)f=`IF(${cell}>=${b[i].min},"${b[i].g}",${f})`;return `IF(${cell}="","",${f})`}
-function subjectSheet(c,s){
-  const L=level(c.grade),res=calc(c,s),nt=s.tasks.length;
-  const aoa=headerRows(c,`SUBJECT: ${s.name.toUpperCase()}     SUBJECT/CLASS-TEACHER: ${(s.teacher||c.teacher||'').toUpperCase()}     ${L.name.toUpperCase()} — OUT OF ${L.max}`);
-  aoa.push(['','Ass. Type','','',...s.tasks.map(t=>t.type)]);
-  aoa.push(['','Date','','',...s.tasks.map(t=>t.date||'')]);
-  const H=aoa.length;aoa.push(['No','Name (Surname First)','Sex','Class',...s.tasks.map(t=>`${t.label} (${t.max})`),`TOT (${L.max})`,'%','POSITION','GRADE']);
-  c.students.forEach((st,i)=>{const sc=s.scores[st.id]||{};aoa.push([i+1,st.name,st.sex,c.section,...s.tasks.map(t=>typeof sc[t.id]==='number'?sc[t.id]:'')])});
+function numCell(v,f){return v==null||v===''?{t:'s',v:'',f}:{t:'n',v,f}}
+// One AP mark sheet (same layout as the SAPS paper file).
+function subjectSheet(c,s,ap){
+  const L=level(c.grade),res=calc(c,s,ap),T=tasksOf(s,ap),nt=T.length;
+  const aoa=headerRows(c,`SUBJECT: ${s.name.toUpperCase()}     SUBJECT/CLASS-TEACHER: ${(s.teacher||c.teacher||'').toUpperCase()}     AP${ap} — OUT OF ${L.max}`,ap);
+  aoa.push(['','Ass. Type','','',...T.map(t=>t.type)]);
+  aoa.push(['','Date','','',...T.map(t=>t.date||'')]);
+  const H=aoa.length;aoa.push(['No','Name (Surname First)','Sex','Class',...T.map(t=>`${t.label} (${t.max})`),`AP${ap} TOT (${L.max})`,'%','POSITION','GRADE']);
+  c.students.forEach((st,i)=>{const sc=s.scores[st.id]||{};aoa.push([i+1,st.name,st.sex,c.section,...T.map(t=>typeof sc[t.id]==='number'?sc[t.id]:'')])});
   const ws=XLSX.utils.aoa_to_sheet(aoa);
   const r0=H+1,rN=H+c.students.length,ct=4+nt,cp=ct+1,cq=ct+2,cg=ct+3;
-  const totRange=`${A(r0,ct).replace(/(\D+)(\d+)/,'$$$1$$$2')}:${A(Math.max(r0,rN),ct).replace(/(\D+)(\d+)/,'$$$1$$$2')}`;
-  c.students.forEach((st,i)=>{const r=r0+i,x=res[st.id];const rng=nt?`${A(r,4)}:${A(r,3+nt)}`:null;
-    ws[A(r,ct)]=rng?{t:x.tot==null?'s':'n',v:x.tot==null?'':x.tot,f:`IF(COUNT(${rng})=0,"",SUM(${rng}))`}:{t:'s',v:''};
-    ws[A(r,cp)]={t:x.pct==null?'s':'n',v:x.pct==null?'':x.pct,f:`IF(${A(r,ct)}="","",ROUND(${A(r,ct)}/${L.max}*100,1))`};
-    ws[A(r,cq)]={t:x.pos?'n':'s',v:x.pos||'',f:`IF(${A(r,ct)}="","",RANK(${A(r,ct)},${totRange},0))`};
+  const totRange=`${abs(A(r0,ct))}:${abs(A(Math.max(r0,rN),ct))}`;
+  c.students.forEach((st,i)=>{const r=r0+i,x=res[st.id],rng=`${A(r,4)}:${A(r,3+nt)}`;
+    ws[A(r,ct)]=numCell(x.tot,`IF(COUNT(${rng})=0,"",SUM(${rng}))`);
+    ws[A(r,cp)]=numCell(x.pct,`IF(${A(r,ct)}="","",ROUND(${A(r,ct)}/${L.max}*100,1))`);
+    ws[A(r,cq)]=numCell(x.pos,`IF(${A(r,ct)}="","",RANK(${A(r,ct)},${totRange},0))`);
     ws[A(r,cg)]={t:'s',v:x.grade||'',f:gradeFormula(A(r,cp))};});
   ws['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:Math.max(rN,H),c:cg}});
-  ws['!cols']=[{wch:5},{wch:28},{wch:5},{wch:6},...s.tasks.map(()=>({wch:12})),{wch:9},{wch:7},{wch:9},{wch:7}];
+  ws['!cols']=[{wch:5},{wch:28},{wch:5},{wch:6},...T.map(()=>({wch:12})),{wch:11},{wch:7},{wch:9},{wch:7}];
   ws['!merges']=[0,1,2,3].map(r=>({s:{r,c:0},e:{r,c:cg}}));
-  return ws;
+  return {ws,r0,col:ct};
+}
+// Subject total sheet: AP1 and AP2 cells link to the AP sheets' TOT column, so edits in Excel flow through.
+function finalSheet(c,s,links){
+  const L=level(c.grade),t=calcTotal(c,s);
+  const aoa=headerRows(c,`SUBJECT: ${s.name.toUpperCase()} — TOTAL (AP1 + AP2)     SUBJECT/CLASS-TEACHER: ${(s.teacher||c.teacher||'').toUpperCase()}`);aoa.push([]);
+  const H=aoa.length;aoa.push(['No','Name (Surname First)','Sex',`AP1 (${L.max})`,`AP2 (${L.max})`,`TOTAL (${t.max})`,'%','POSITION','GRADE']);
+  c.students.forEach((st,i)=>aoa.push([i+1,st.name,st.sex]));
+  const ws=XLSX.utils.aoa_to_sheet(aoa);const r0=H+1,rN=H+c.students.length,rE=Math.max(r0,rN);
+  const totRange=`${abs(A(r0,5))}:${abs(A(rE,5))}`;
+  const den=`(${L.max}*MAX(1,(COUNT(${abs(A(r0,3))}:${abs(A(rE,3))})>0)+(COUNT(${abs(A(r0,4))}:${abs(A(rE,4))})>0)))`;
+  c.students.forEach((st,i)=>{const r=r0+i,x=t.res[st.id];
+    APS.forEach((ap,k)=>{const v=x.aps[k],ln=links[ap];ws[A(r,3+k)]=ln?numCell(v,`${qs(ln.sheet)}!${A(ln.r0+i,ln.col)}`):numCell(v)});
+    ws[A(r,5)]=numCell(x.tot,`IF(COUNT(${A(r,3)}:${A(r,4)})=0,"",SUM(${A(r,3)}:${A(r,4)}))`);
+    ws[A(r,6)]=numCell(x.pct,`IF(${A(r,5)}="","",ROUND(${A(r,5)}/${den}*100,1))`);
+    ws[A(r,7)]=numCell(x.pos,`IF(${A(r,5)}="","",RANK(${A(r,5)},${totRange},0))`);
+    ws[A(r,8)]={t:'s',v:x.grade||'',f:gradeFormula(A(r,6))};});
+  ws['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:Math.max(rN,H),c:8}});
+  ws['!cols']=[{wch:5},{wch:28},{wch:5},{wch:10},{wch:10},{wch:11},{wch:7},{wch:9},{wch:7}];
+  ws['!merges']=[0,1,2,3].map(r=>({s:{r,c:0},e:{r,c:8}}));
+  return {ws,r0,col:5};
+}
+function uniqueName(used,n){const b=safeSheet(n);let x=b,k=2;while(used.has(x.toLowerCase()))x=b.slice(0,28)+' '+k++;used.add(x.toLowerCase());return x}
+function sheetBase(s){const n=safeSheet(s.name).trim();if(n.length<=24)return n;const ac=n.split(/[\s&,-]+/).filter(w=>/^[A-Z]/.test(w)).map(w=>w[0]).join('');return ac.length>=2?ac:n.slice(0,24).trim()}
+function addSubjectSheets(wb,c,s,used){
+  const links={};
+  APS.forEach(ap=>{if(!tasksOf(s,ap).length)return;const nm=uniqueName(used,`${sheetBase(s)} AP${ap}`);const sh=subjectSheet(c,s,ap);XLSX.utils.book_append_sheet(wb,sh.ws,nm);links[ap]={sheet:nm,r0:sh.r0,col:sh.col}});
+  const nm=uniqueName(used,`${sheetBase(s)} Total`);const f=finalSheet(c,s,links);XLSX.utils.book_append_sheet(wb,f.ws,nm);
+  return {sheet:nm,r0:f.r0,col:f.col};
 }
 function rankingSheet(c,s){
-  const L=level(c.grade),res=calc(c,s);
-  const rows=c.students.map((st,i)=>({st,no:i+1,...res[st.id]})).sort((a,b)=>(a.pos||1e9)-(b.pos||1e9)||a.st.name.localeCompare(b.st.name));
-  const aoa=headerRows(c,`RANKING — ${s.name.toUpperCase()} (OUT OF ${L.max})`);aoa.push([]);aoa.push(['Position','Name','Sex','No','TOT','%','Grade']);
-  rows.forEach(r=>aoa.push([r.pos||'',r.st.name,r.st.sex,r.no,r.tot??'',r.pct??'',r.grade||'']));
-  const ws=XLSX.utils.aoa_to_sheet(aoa);ws['!cols']=[{wch:9},{wch:28},{wch:5},{wch:5},{wch:8},{wch:7},{wch:7}];return ws;
+  const L=level(c.grade),t=calcTotal(c,s);
+  const rows=c.students.map((st,i)=>({st,no:i+1,...t.res[st.id]})).sort(byPos);
+  const aoa=headerRows(c,`RANKING — ${s.name.toUpperCase()} — TOTAL AP1 + AP2 (OUT OF ${t.max})`);aoa.push([]);aoa.push(['Position','Name','Sex','No',`AP1 (${L.max})`,`AP2 (${L.max})`,`TOTAL (${t.max})`,'%','Grade']);
+  rows.forEach(r=>aoa.push([r.pos||'',r.st.name,r.st.sex,r.no,r.aps[0]??'',r.aps[1]??'',r.tot??'',r.pct??'',r.grade||'']));
+  const ws=XLSX.utils.aoa_to_sheet(aoa);ws['!cols']=[{wch:9},{wch:28},{wch:5},{wch:5},{wch:9},{wch:9},{wch:10},{wch:7},{wch:7}];return ws;
 }
-function summarySheet(c){
-  const res=calcSummary(c),ns=c.subjects.length;
-  const aoa=headerRows(c,`CLASS SUMMARY — ALL SUBJECTS (%)`);aoa.push([]);const H=aoa.length;
-  aoa.push(['No','Name (Surname First)','Sex',...c.subjects.map(s=>s.name+' %'),'Average %','POSITION','GRADE']);
-  c.students.forEach((st,i)=>aoa.push([i+1,st.name,st.sex,...res[st.id].pcts.map(p=>p??'')]));
-  const ws=XLSX.utils.aoa_to_sheet(aoa);const r0=H+1,rN=H+c.students.length,ca=3+ns,cp=ca+1,cg=ca+2;
-  const abs=x=>x.replace(/(\D+)(\d+)/,'$$$1$$$2');const avgRange=`${abs(A(r0,ca))}:${abs(A(Math.max(r0,rN),ca))}`;
+// Final results for all subjects; when links are given, each subject column links to that subject's Total sheet.
+function summarySheet(c,links){
+  const {res,per,grandMax}=calcSummary(c),ns=c.subjects.length;
+  const aoa=headerRows(c,`FINAL RESULTS — ALL SUBJECTS (EACH SUBJECT = AP1 + AP2)     CLASS TEACHER: ${(c.teacher||'').toUpperCase()}`);aoa.push([]);const H=aoa.length;
+  aoa.push(['No','Name (Surname First)','Sex',...c.subjects.map((s,j)=>`${s.name} (${per[j].max})`),`GRAND TOTAL (${grandMax})`,'%','POSITION','GRADE']);
+  c.students.forEach((st,i)=>aoa.push([i+1,st.name,st.sex]));
+  const ws=XLSX.utils.aoa_to_sheet(aoa);const r0=H+1,rN=H+c.students.length,ca=3+ns,cp=ca+1,cq=ca+2,cg=ca+3;
+  const totRange=`${abs(A(r0,ca))}:${abs(A(Math.max(r0,rN),ca))}`;
   c.students.forEach((st,i)=>{const r=r0+i,x=res[st.id],rng=`${A(r,3)}:${A(r,2+ns)}`;
-    ws[A(r,ca)]={t:x.avg==null?'s':'n',v:x.avg??'',f:`IF(COUNT(${rng})=0,"",ROUND(AVERAGE(${rng}),1))`};
-    ws[A(r,cp)]={t:x.pos?'n':'s',v:x.pos||'',f:`IF(${A(r,ca)}="","",RANK(${A(r,ca)},${avgRange},0))`};
-    ws[A(r,cg)]={t:'s',v:x.grade||'',f:gradeFormula(A(r,ca))};});
+    x.subs.forEach((sub,j)=>{const ln=links&&links[j];ws[A(r,3+j)]=ln?numCell(sub.tot,`${qs(ln.sheet)}!${A(ln.r0+i,ln.col)}`):numCell(sub.tot)});
+    ws[A(r,ca)]=numCell(x.tot,`IF(COUNT(${rng})=0,"",SUM(${rng}))`);
+    ws[A(r,cp)]=numCell(x.pct,grandMax?`IF(${A(r,ca)}="","",ROUND(${A(r,ca)}/${grandMax}*100,1))`:undefined);
+    ws[A(r,cq)]=numCell(x.pos,`IF(${A(r,ca)}="","",RANK(${A(r,ca)},${totRange},0))`);
+    ws[A(r,cg)]={t:'s',v:x.grade||'',f:gradeFormula(A(r,cp))};});
   ws['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:Math.max(rN,H),c:cg}});
-  ws['!cols']=[{wch:5},{wch:28},{wch:5},...c.subjects.map(()=>({wch:12})),{wch:10},{wch:9},{wch:7}];
+  ws['!cols']=[{wch:5},{wch:28},{wch:5},...c.subjects.map(()=>({wch:12})),{wch:13},{wch:7},{wch:9},{wch:7}];
   ws['!merges']=[0,1,2,3].map(r=>({s:{r,c:0},e:{r,c:cg}}));return ws;
 }
-function fileBase(c){return `Grade${className(c)}-T${c.term}-P${c.period}-${c.year}`.replace(/[^\w\-]/g,'')}
-function exportSubject(){const c=cls(),s=subj();const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,subjectSheet(c,s),safeSheet(s.name));XLSX.utils.book_append_sheet(wb,rankingSheet(c,s),'Ranking');
+function fileBase(c){return `Grade${className(c)}-T${c.term}-${c.year}`.replace(/[^\w\-]/g,'')}
+function exportSubject(){const c=cls(),s=subj();const wb=XLSX.utils.book_new(),used=new Set(['ranking']);
+  addSubjectSheets(wb,c,s,used);XLSX.utils.book_append_sheet(wb,rankingSheet(c,s),'Ranking');
   saveBook(wb,`${s.name.replace(/[^\w]+/g,'-')}-${fileBase(c)}.xlsx`)}
-function exportSummary(){const c=cls();const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,summarySheet(c),'Class Summary');saveBook(wb,`Class-Summary-${fileBase(c)}.xlsx`)}
-function exportAll(){const c=cls();const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,summarySheet(c),'Class Summary');
-  const used=new Set(['Class Summary']);c.subjects.forEach(s=>{let n=safeSheet(s.name),k=2;while(used.has(n))n=safeSheet(s.name).slice(0,28)+' '+k++;used.add(n);XLSX.utils.book_append_sheet(wb,subjectSheet(c,s),n)});
-  saveBook(wb,`All-Subjects-${fileBase(c)}.xlsx`)}
+function exportSummary(){const c=cls();const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,summarySheet(c,null),'Final Results');saveBook(wb,`Final-Results-${fileBase(c)}.xlsx`)}
+function exportAll(){const c=cls();const wb=XLSX.utils.book_new(),used=new Set(['final results']);
+  const links=c.subjects.map(s=>addSubjectSheets(wb,c,s,used));
+  XLSX.utils.book_append_sheet(wb,summarySheet(c,links),'Final Results');wb.SheetNames.unshift(wb.SheetNames.pop());
+  saveBook(wb,`Final-Results-All-Subjects-${fileBase(c)}.xlsx`)}
 function importMarks(){
-  const c=cls(),s=subj();
+  const c=cls(),s=subj(),ap=ui.ap,T=tasksOf(s,ap);
+  if(!T.length){alert(`Set up the AP${ap} tasks for ${s.name} first.`);return}
   pickFile('.xlsx,.xls,.csv',file=>readBook(file,wb=>{
-    const name=wb.SheetNames.find(n=>n.toLowerCase()===safeSheet(s.name).toLowerCase())||wb.SheetNames.find(n=>n!=='Ranking'&&n!=='Class Summary')||wb.SheetNames[0];
+    const N=wb.SheetNames,lc=n=>n.toLowerCase(),base=lc(sheetBase(s));
+    const name=N.find(n=>lc(n)===`${base} ap${ap}`)||N.find(n=>lc(n)===lc(safeSheet(s.name)))||N.find(n=>lc(n).endsWith(` ap${ap}`))||N.find(n=>!/total|final|ranking|summary/i.test(n))||N[0];
     const rows=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,defval:'',raw:true});const h=findHeader(rows);
     if(!h){alert('Could not find the header row (a column headed "Name"). Use a sheet exported from this app.');return}
     const hdr=rows[h.row].map(v=>String(v).trim().toLowerCase());
-    const map=s.tasks.map(t=>{const full=`${t.label} (${t.max})`.toLowerCase(),lab=t.label.toLowerCase();let j=hdr.indexOf(full);if(j<0)j=hdr.indexOf(lab);if(j<0)j=hdr.findIndex(x=>x.startsWith(lab+' ('));return j});
-    if(map.every(j=>j<0)){alert(`None of the ${s.name} task columns were found in sheet "${name}". The column headings must match the task names, e.g. "${s.tasks[0].label} (${s.tasks[0].max})".`);return}
+    const map=T.map(t=>{const full=`${t.label} (${t.max})`.toLowerCase(),lab=t.label.toLowerCase();let j=hdr.indexOf(full);if(j<0)j=hdr.indexOf(lab);if(j<0)j=hdr.findIndex(x=>x.startsWith(lab+' ('));return j});
+    if(map.every(j=>j<0)){alert(`None of the ${s.name} AP${ap} task columns were found in sheet "${name}". The column headings must match the task names, e.g. "${T[0].label} (${T[0].max})".`);return}
     const byName={};c.students.forEach(st=>byName[norm(st.name)]=st);
     let got=0,unknown=[],invalid=[];const plan=[];
     for(let i=h.row+1;i<rows.length;i++){const r=rows[i]||[];const nm=String(r[h.nameCol]||'').trim();if(!nm)continue;const st=byName[norm(nm)];if(!st){unknown.push(nm);continue}
-      s.tasks.forEach((t,k)=>{const j=map[k];if(j<0)return;const v=r[j];if(v===''||v==null)return;const n=Number(v);
+      T.forEach((t,k)=>{const j=map[k];if(j<0)return;const v=r[j];if(v===''||v==null)return;const n=Number(v);
         if(isNaN(n)||n<0||n>Number(t.max)||Math.round(n*2)!==n*2){invalid.push(`${nm} – ${t.label}: ${v}`);return}plan.push([st.id,t.id,n])});}
     if(!plan.length){alert('No valid marks found to import.'+(unknown.length?`\n\nNames not on the class list: ${unknown.slice(0,8).join(', ')}`:''));return}
-    const missingCols=s.tasks.filter((t,k)=>map[k]<0).map(t=>t.label);
-    if(!confirm(`Import ${plan.length} mark(s) into ${s.name} from sheet "${name}"?\nMarks already in the app for these students and tasks will be replaced. Blank cells in Excel are left unchanged.`+(missingCols.length?`\n\nColumns not found (skipped): ${missingCols.join(', ')}`:'')))return;
+    const missingCols=T.filter((t,k)=>map[k]<0).map(t=>t.label);
+    if(!confirm(`Import ${plan.length} mark(s) into ${s.name} AP${ap} from sheet "${name}"?\nMarks already in the app for these students and tasks will be replaced. Blank cells in Excel are left unchanged.`+(missingCols.length?`\n\nColumns not found (skipped): ${missingCols.join(', ')}`:'')))return;
     plan.forEach(([sid,tid,n])=>{(s.scores[sid]||(s.scores[sid]={}))[tid]=n;got++});save();render();
-    alert(`${got} mark(s) imported.`+(unknown.length?`\n\n${unknown.length} name(s) not on the class list were skipped: ${unknown.slice(0,8).join(', ')}${unknown.length>8?'…':''}`:'')+(invalid.length?`\n\n${invalid.length} invalid mark(s) skipped: ${invalid.slice(0,8).join('; ')}${invalid.length>8?'…':''}`:''));
+    alert(`${got} mark(s) imported into AP${ap}.`+(unknown.length?`\n\n${unknown.length} name(s) not on the class list were skipped: ${unknown.slice(0,8).join(', ')}${unknown.length>8?'…':''}`:'')+(invalid.length?`\n\n${invalid.length} invalid mark(s) skipped: ${invalid.slice(0,8).join('; ')}${invalid.length>8?'…':''}`:''));
   }));
 }
 
@@ -652,9 +743,11 @@ function saveBook(wb,name){const out=XLSX.write(wb,{bookType:'xlsx',type:'array'
 function printHead(c,extra){return `<div class="hd"><b>${esc(S.school.name||'')}</b><br>${esc(S.school.address||'')}${S.school.phone?'<br>PH#: '+esc(S.school.phone):''}</div>${extra}`}
 function doPrint(html){$('#printArea').innerHTML=html;setTimeout(()=>window.print(),50)}
 function printSAPS(blank){
-  const c=cls(),s=subj(),L=level(c.grade),res=calc(c,s);const cols=Math.max(s.tasks.length,blank?12:s.tasks.length);
-  const tk=i=>s.tasks[i]||null;const rowsN=Math.max(c.students.length,blank?40:0);
-  let h=`<div class="ps">${printHead(c,`<div class="meta"><span>SAPS FILE TERM: <u>${esc(c.term)}</u></span><span>ASS. PERIOD #: <u>${esc(c.period)}</u></span><span>GRADE: <u>${esc(className(c))}</u></span><span>OUT OF: <u>${L.max}</u></span></div>
+  const c=cls(),s=subj(),L=level(c.grade),ap=ui.ap,T=tasksOf(s,ap),res=calc(c,s,ap);
+  if(!T.length&&!blank){alert(`No AP${ap} tasks set up for ${s.name} yet.`);return}
+  const cols=Math.max(T.length,blank?12:T.length);
+  const tk=i=>T[i]||null;const rowsN=Math.max(c.students.length,blank?40:0);
+  let h=`<div class="ps">${printHead(c,`<div class="meta"><span>SAPS FILE TERM: <u>${esc(c.term)}</u></span><span>ASS. PERIOD #: <u>0${ap}</u></span><span>GRADE: <u>${esc(className(c))}</u></span><span>OUT OF: <u>${L.max}</u></span></div>
   <div class="meta"><span>SUBJECT: <u>${esc(s.name.toUpperCase())}</u></span><span>SUBJECT/CLASS-TEACHER: <u>${esc((s.teacher||c.teacher||'').toUpperCase())}</u></span></div>`)}
   <table><thead>
   <tr><th rowspan="4" style="width:6mm">No</th><th rowspan="4" style="text-align:left">Name<br>(Surname First)</th><th rowspan="4" style="width:5mm"><span class="vt">SEX</span></th><th rowspan="4" style="width:5mm"><span class="vt">CLASS</span></th><th style="text-align:left;width:14mm">DATE</th>${[...Array(cols)].map((_,i)=>`<th>${tk(i)&&tk(i).date?esc(tk(i).date.slice(5).split('-').reverse().join('/')):''}</th>`).join('')}<th rowspan="4" style="width:9mm">TOT<br>/${L.max}</th><th rowspan="4" style="width:9mm">%</th><th rowspan="4" style="width:6mm"><span class="vt">POSITION</span></th><th rowspan="4" style="width:6mm"><span class="vt">GRADE</span></th></tr>
@@ -669,16 +762,23 @@ function printSAPS(blank){
   doPrint(h);
 }
 function printRanking(){
-  const c=cls(),s=subj(),L=level(c.grade),res=calc(c,s);
-  const rows=c.students.map((st,i)=>({st,no:i+1,...res[st.id]})).sort((a,b)=>(a.pos||1e9)-(b.pos||1e9)||a.st.name.localeCompare(b.st.name));
-  doPrint(`<div class="ps">${printHead(c,`<div class="meta"><span>RANKING — <u>${esc(s.name.toUpperCase())}</u></span><span>GRADE <u>${esc(className(c))}</u></span><span>TERM <u>${esc(c.term)}</u> PERIOD <u>${esc(c.period)}</u></span><span>OUT OF <u>${L.max}</u></span></div>`)}
+  const c=cls(),s=subj(),L=level(c.grade),view=ui.rview||'total';
+  if(view==='total'){
+    const t=calcTotal(c,s),rows=c.students.map((st,i)=>({st,...t.res[st.id]})).sort(byPos);
+    doPrint(`<div class="ps">${printHead(c,`<div class="meta"><span>RANKING — <u>${esc(s.name.toUpperCase())}</u></span><span>GRADE <u>${esc(className(c))}</u></span><span>TERM <u>${esc(c.term)}</u></span><span>TOTAL AP1 + AP2 OUT OF <u>${t.max}</u></span></div>`)}
+    <table><thead><tr><th>Position</th><th style="text-align:left">Name</th><th>Sex</th><th>AP1 /${L.max}</th><th>AP2 /${L.max}</th><th>Total /${t.max}</th><th>%</th><th>Grade</th></tr></thead><tbody>${rows.map(r=>`<tr><td class="c">${r.pos||''}</td><td>${esc(r.st.name)}</td><td class="c">${esc(r.st.sex)}</td><td class="c">${r.aps[0]??''}</td><td class="c">${r.aps[1]??''}</td><td class="c"><b>${r.tot??''}</b></td><td class="c">${r.pct??''}</td><td class="c">${r.grade||''}</td></tr>`).join('')}</tbody></table></div>`);
+    return;
+  }
+  const ap=Number(view),res=calc(c,s,ap),rows=c.students.map((st,i)=>({st,...res[st.id]})).sort(byPos);
+  doPrint(`<div class="ps">${printHead(c,`<div class="meta"><span>RANKING — <u>${esc(s.name.toUpperCase())}</u></span><span>GRADE <u>${esc(className(c))}</u></span><span>TERM <u>${esc(c.term)}</u> ASS. PERIOD <u>0${ap}</u></span><span>OUT OF <u>${L.max}</u></span></div>`)}
   <table><thead><tr><th>Position</th><th style="text-align:left">Name</th><th>Sex</th><th>TOT</th><th>%</th><th>Grade</th></tr></thead><tbody>${rows.map(r=>`<tr><td class="c">${r.pos||''}</td><td>${esc(r.st.name)}</td><td class="c">${esc(r.st.sex)}</td><td class="c">${r.tot??''}</td><td class="c">${r.pct??''}</td><td class="c">${r.grade||''}</td></tr>`).join('')}</tbody></table></div>`);
 }
 function printSummary(){
-  const c=cls(),res=calcSummary(c);
-  const rows=c.students.map((st,i)=>({st,...res[st.id]})).sort((a,b)=>(a.pos||1e9)-(b.pos||1e9)||a.st.name.localeCompare(b.st.name));
-  doPrint(`<div class="ps">${printHead(c,`<div class="meta"><span>CLASS SUMMARY</span><span>GRADE <u>${esc(className(c))}</u></span><span>TERM <u>${esc(c.term)}</u> PERIOD <u>${esc(c.period)}</u></span><span>TEACHER <u>${esc((c.teacher||'').toUpperCase())}</u></span></div>`)}
-  <table><thead><tr><th>Pos</th><th style="text-align:left">Name</th><th>Sex</th>${c.subjects.map(s=>`<th>${esc(s.name)}</th>`).join('')}<th>Avg %</th><th>Grade</th></tr></thead><tbody>${rows.map(r=>`<tr><td class="c">${r.pos||''}</td><td>${esc(r.st.name)}</td><td class="c">${esc(r.st.sex)}</td>${r.pcts.map(p=>`<td class="c">${p??''}</td>`).join('')}<td class="c">${r.avg??''}</td><td class="c">${r.grade||''}</td></tr>`).join('')}</tbody></table></div>`);
+  const c=cls(),{res,per,grandMax}=calcSummary(c);
+  const rows=c.students.map(st=>({st,...res[st.id]})).sort(byPos);
+  doPrint(`<div class="ps land">${printHead(c,`<div class="meta"><span>FINAL RESULTS — ALL SUBJECTS (AP1 + AP2)</span><span>GRADE <u>${esc(className(c))}</u></span><span>TERM <u>${esc(c.term)}</u> YEAR <u>${esc(c.year)}</u></span><span>CLASS TEACHER <u>${esc((c.teacher||'').toUpperCase())}</u></span></div>`)}
+  <table><thead><tr><th>Pos</th><th style="text-align:left">Name</th><th>Sex</th>${c.subjects.map((s,j)=>`<th>${esc(s.name)}<br>/${per[j].max}</th>`).join('')}<th>Grand Total<br>/${grandMax}</th><th>%</th><th>Grade</th></tr></thead><tbody>${rows.map(r=>`<tr><td class="c">${r.pos||''}</td><td style="white-space:nowrap">${esc(r.st.name)}</td><td class="c">${esc(r.st.sex)}</td>${r.subs.map(x=>`<td class="c">${x.tot??''}</td>`).join('')}<td class="c"><b>${r.tot??''}</b></td><td class="c">${r.pct??''}</td><td class="c">${r.grade||''}</td></tr>`).join('')}</tbody></table>
+  <div class="foot"><span>Class teacher: ____________________</span><span>Head Teacher: ____________________</span><span>Date: ____________</span></div></div>`);
 }
 
 load();render();
